@@ -1,0 +1,13 @@
+{
+  "framework": "python-wrong.n-body",
+  "tests": [{
+    "default": {
+      "test_type": "algorithm",
+      "approach": "Realistic", "classification": "Micro", "framework": "python-wrong.n-body",
+      "language": "Python (wrong output, test fixture)", "display_name": "n-body (Python (wrong output, test fixture))", "notes": "", "versus": "",
+      "algorithm": "n-body",
+      "build_command": "",
+      "run_command": "python3 /app/src/nbody.py ${BENCH_N}"
+    }
+  }]
+}

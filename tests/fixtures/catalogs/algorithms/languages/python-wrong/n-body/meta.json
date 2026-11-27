@@ -1,0 +1,8 @@
+{
+  "id": "python-wrong.n-body",
+  "name": "n-body (Python (wrong output, test fixture))",
+  "language": "Python (wrong output, test fixture)",
+  "version": "3.12.11",
+  "license": "BSD-3-Clause",
+  "benchmark": {"status": "active"}
+}

@@ -1,0 +1,4 @@
+{
+  "$comment": "Fixture: the base fields (BT schema/implementation.base.schema.json) are enough here.",
+  "type": "object"
+}

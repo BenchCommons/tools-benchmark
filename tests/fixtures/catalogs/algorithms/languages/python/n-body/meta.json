@@ -1,0 +1,8 @@
+{
+  "id": "python.n-body",
+  "name": "n-body (Python)",
+  "language": "Python",
+  "version": "3.12.11",
+  "license": "BSD-3-Clause",
+  "benchmark": {"status": "active"}
+}

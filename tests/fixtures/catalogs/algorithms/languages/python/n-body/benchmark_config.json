@@ -1,0 +1,13 @@
+{
+  "framework": "python.n-body",
+  "tests": [{
+    "default": {
+      "test_type": "algorithm",
+      "approach": "Realistic", "classification": "Micro", "framework": "python.n-body",
+      "language": "Python", "display_name": "n-body (Python)", "notes": "", "versus": "",
+      "algorithm": "n-body",
+      "build_command": "",
+      "run_command": "python3 /app/src/nbody.py ${BENCH_N}"
+    }
+  }]
+}

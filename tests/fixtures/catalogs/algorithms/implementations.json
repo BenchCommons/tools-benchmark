@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "generatedFrom": "fixture",
+  "implementations": [
+    {"id": "python-wrong.n-body", "path": "languages/python-wrong/n-body", "version": "3.12.11", "benchmark": {"status": "active"}},
+    {"id": "python.n-body", "path": "languages/python/n-body", "version": "3.12.11", "benchmark": {"status": "active"}}
+  ]
+}
