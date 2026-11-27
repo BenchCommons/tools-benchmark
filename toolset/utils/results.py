@@ -13,9 +13,14 @@ from toolset.utils.output_helper import log
 from toolset.utils import summary, environment
 
 
-RESULT_BEGIN = 'SSGBERK_RESULT_BEGIN'
-RESULT_END = 'SSGBERK_RESULT_END'
-PROFILE_UNSUPPORTED = 'SSGBERK_PROFILE_UNSUPPORTED'
+# Marker prefix (spec 010 R-15, R-16): BENCH_ is the generic prefix, SSGBERK_ is
+# accepted as an alias for all of contractVersion 1. Patterns match both, so
+# the text (and any failure reason quoted from it) is never rewritten.
+_P = r'(?:BENCH|SSGBERK)_'
+RESULT_BEGIN = _P + 'RESULT_BEGIN'
+RESULT_END = _P + 'RESULT_END'
+# BENCH_UNSUPPORTED, or its SSGBERK_ spelling SSGBERK_PROFILE_UNSUPPORTED.
+UNSUPPORTED = r'(?:BENCH_UNSUPPORTED|SSGBERK_PROFILE_UNSUPPORTED)'
 
 _BOL = r'^[ \t]*'
 
@@ -50,38 +55,50 @@ def classify_build_output(text, require_conformance=False):
     SSGBERK_CONFORMANCE_PENDING line, if any); otherwise it is tolerated
     (the result is recorded as conformance 'unchecked'), PENDING included.
     """
-    line = _first_line('SSGBERK_CONFORMANCE_FAIL', text)
+    line = _first_line(_P + 'CONFORMANCE_FAIL', text)
     if line:
         return 'nonconformant', 'nonconformant: ' + line
-    line = _first_line('SSGBERK_VERIFY_FAIL', text)
+    line = _first_line(_P + 'VERIFY_FAIL', text)
     if line:
         return 'failed', line
-    has_result = RESULT_BEGIN in text
-    if re.search(_BOL + PROFILE_UNSUPPORTED, text, re.M) and not has_result:
+    has_result = re.search(RESULT_BEGIN, text) is not None
+    if re.search(_BOL + UNSUPPORTED, text, re.M) and not has_result:
         return 'unsupported', None
     start = re.search(_BOL + r'STARTTIME ', text, re.M)
     if not start:
         # Nothing was timed: with a result block that is a protocol breach.
         return 'failed', (PROTOCOL_REASON if has_result else None)
-    verify = re.search(_BOL + r'SSGBERK_VERIFY_OK', text, re.M)
+    verify = re.search(_BOL + _P + r'VERIFY_OK', text, re.M)
     if not verify or verify.start() > start.start():
         return 'failed', PROTOCOL_REASON
-    conformance = re.search(_BOL + r'SSGBERK_CONFORMANCE_OK', text, re.M)
+    conformance = re.search(_BOL + _P + r'CONFORMANCE_OK', text, re.M)
     if conformance:
         if conformance.start() > start.start():
             return 'failed', PROTOCOL_REASON
     else:
         # SF 006 report mode: PENDING (no OK) is informational and timing
         # follows; it is a missing OK, not a protocol breach.
-        pending = _first_line('SSGBERK_CONFORMANCE_PENDING', text)
+        pending = _first_line(_P + 'CONFORMANCE_PENDING', text)
         if require_conformance:
             return 'nonconformant', 'nonconformant: ' + (
                 pending or 'missing SSGBERK_CONFORMANCE_OK')
-        if re.search(_BOL + r'SSGBERK_CONFORMANCE_(?!PENDING)', text, re.M):
+        if re.search(_BOL + _P + r'CONFORMANCE_(?!PENDING)', text, re.M):
             return 'failed', PROTOCOL_REASON
     # else: tolerated (conformance 'unchecked') until SF 006 Task 27 flips
     # --require-conformance on.
     return 'ok', None
+
+
+def marker_prefix(text):
+    """'SSGBERK' if any line starts with the alias prefix, else 'BENCH'."""
+    return 'SSGBERK' if re.search(_BOL + 'SSGBERK_', text, re.M) else 'BENCH'
+
+
+def _engine(header):
+    """(engine, version) from the optional engine=/version= pairs on the
+    RESULT_BEGIN line; hyperfine and None when absent (spec 010 R-15)."""
+    pairs = dict(re.findall(r'\b(engine|version)=(\S+)', header))
+    return pairs.get('engine', 'hyperfine'), pairs.get('version')
 
 
 def _number(value):
@@ -108,14 +125,17 @@ def parse_build_output(text, number_of_files, content_size, min_runs,
     status, _ = classify_build_output(text, require_conformance)
     if status != 'ok':
         return []
-    start = text.find(RESULT_BEGIN)
-    end = text.find(RESULT_END, start)
-    if start == -1 or end == -1:
+    begin = re.search(RESULT_BEGIN + r'[ \t]*([^\n]*)', text)
+    if not begin:
+        return []
+    end = re.search(RESULT_END, text[begin.end():])
+    if not end:
         return []
     try:
-        result = json.loads(text[start + len(RESULT_BEGIN):end])['results'][0]
+        result = json.loads(text[begin.end():begin.end() + end.start()])['results'][0]
     except (ValueError, KeyError, IndexError, TypeError):
         return []
+    engine, engine_version = _engine(begin.group(1))
     start_time = re.search(_BOL + r'STARTTIME (\d+)', text, re.M)
     end_time = re.search(_BOL + r'ENDTIME (\d+)', text, re.M)
     mean = result.get('mean')
@@ -127,10 +147,10 @@ def parse_build_output(text, number_of_files, content_size, min_runs,
     if isinstance(memory, (int, float)):
         memory = [memory]
     memory = [m for m in memory if isinstance(m, (int, float))] if isinstance(memory, list) else []
-    in_files, in_bytes = _io_marker('SSGBERK_INPUT', text)
-    out_files, out_bytes = _io_marker('SSGBERK_OUTPUT', text)
+    in_files, in_bytes = _io_marker(_P + 'INPUT', text)
+    out_files, out_bytes = _io_marker(_P + 'OUTPUT', text)
     features = None
-    m = re.search(_BOL + r'SSGBERK_CONFORMANCE_OK\b.*?\bfeatures=(\S*)', text, re.M)
+    m = re.search(_BOL + _P + r'CONFORMANCE_OK\b.*?\bfeatures=(\S*)', text, re.M)
     if m:
         features = [f for f in m.group(1).split(',') if f and f != '-']
     try:
@@ -164,8 +184,11 @@ def parse_build_output(text, number_of_files, content_size, min_runs,
         'inputMBPerSecond': in_bytes / 1e6 / median if in_bytes is not None and median else None,
         'features': features,
         'conformance': 'ok' if re.search(
-            _BOL + r'SSGBERK_CONFORMANCE_OK', text, re.M) else 'unchecked',
+            _BOL + _P + r'CONFORMANCE_OK', text, re.M) else 'unchecked',
         'status': 'ok',
+        'markerPrefix': marker_prefix(text),
+        'engine': engine,
+        'engineVersion': engine_version,
     }]
 
 
