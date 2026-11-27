@@ -1,7 +1,9 @@
-<p align="center"><img src=".github/ssgberk-logo.png" alt="SSGBerk Logo"><br/><a href="README.md#english">English</a> | <a href="README.md#português-do-brasil">Português do Brasil</a><br/><br/><a href="https://github.com/ssgberk/benchmark-tool/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome" /></a> <a href="https://github.com/ssgberk/benchmark-tool/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/ssgberk/benchmark-tool/ci.yml?branch=master&style=flat-square" alt="CI" /></a> <img src="https://img.shields.io/github/last-commit/ssgberk/benchmark-tool.svg?style=flat-square" alt="GitHub last commit" /></p>
+<p align="center"><img src=".github/ssgberk-logo.png" alt="SSGBerk Logo"><br/><a href="README.md#english">English</a> | <a href="README.md#português-do-brasil">Português do Brasil</a><br/><br/><a href="https://github.com/BenchCommons/tools-benchmark/pulls"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square" alt="PRs Welcome" /></a> <a href="https://github.com/BenchCommons/tools-benchmark/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/BenchCommons/tools-benchmark/ci.yml?branch=master&style=flat-square" alt="CI" /></a> <img src="https://img.shields.io/github/last-commit/BenchCommons/tools-benchmark.svg?style=flat-square" alt="GitHub last commit" /></p>
 
 # English:
 # Welcome to [Static Site Generator Benchmarks (SSGBerk)]
+
+This repository is [`BenchCommons/tools-benchmark`](https://github.com/BenchCommons/tools-benchmark), the BenchCommons benchmark runner (formerly `ssgberk/benchmark-tool`). **SSGBerk** is the static site generator benchmark that it runs. The `./ssgberk` launcher and the `ssgberk/*` image names keep their names.
 
 
 ## What is Static Site Generator (SSG)?
@@ -10,9 +12,9 @@ A static web page (sometimes called a flat page/stationary page) is a web page t
 ## What SSGBerk is?
 A project Forked from TechEmpower/FrameworkBenchmarks that provides representative performance measures across a wide field of static site generators. Since the build time between the different SSGs can vary, we are trying to understand the behavior in different situations. The project presently includes generators on many languages including `Go`, `Python`, `Java`, `Ruby`, `PHP`, `JavaScript` and others.
 
-If you're new to the project, welcome! Please feel free to ask questions [here](https://github.com/ssgberk/benchmark-tool/issues/). We encourage new generators and contributors to ask questions. We're here to help!
+If you're new to the project, welcome! Please feel free to ask questions [here](https://github.com/BenchCommons/tools-benchmark/issues/). We encourage new generators and contributors to ask questions. We're here to help!
 
-If you find yourself in a directory or file that you're not sure what the purpose is, checkout our [file structure](https://github.com/ssgberk/benchmark-tool/wiki/File-Structure) in our documenation, which will briefly explain the use of relevant directories and files.
+If you find yourself in a directory or file that you're not sure what the purpose is, checkout our [file structure](https://github.com/BenchCommons/tools-benchmark/wiki/File-Structure) in our documenation, which will briefly explain the use of relevant directories and files.
 
 ## Quick Start Guide
 
@@ -20,7 +22,7 @@ To get started developing you'll need to install [docker](https://docs.docker.co
 
 1. Clone SSGBERK.
 
-        $ git clone --recurse-submodules https://github.com/ssgberk/benchmark-tool.git
+        $ git clone --recurse-submodules https://github.com/BenchCommons/tools-benchmark.git
 
 2. Run a test.
 
@@ -32,7 +34,7 @@ To get started developing you'll need to install [docker](https://docs.docker.co
 
 ### Explanation of the `./ssgberk` script
 
-The run script is pretty wordy, but each and every flag is required. If you are using windows, either adapt the docker command at the end of the `./ssgberk` shell script (replacing `${SCRIPT_ROOT}` with `/c/path/to/benchmark-tool`), or use vagrant.
+The run script is pretty wordy, but each and every flag is required. If you are using windows, either adapt the docker command at the end of the `./ssgberk` shell script (replacing `${SCRIPT_ROOT}` with `/c/path/to/tools-benchmark`), or use vagrant.
 
 The command looks like this: `docker run -i [-t] --rm --network ssgberk -v /var/run/docker.sock:/var/run/docker.sock -v [FWROOT]:/FrameworkBenchmarks ssgberk/toolset [ARGS]`
 
@@ -45,7 +47,7 @@ The command looks like this: `docker run -i [-t] --rm --network ssgberk -v /var/
 
 #### A note on Windows:
 
-- Docker expects Linux-style paths. If you cloned on your `C:\` drive, then `[ABS PATH TO THIS DIR]` would be `/c/benchmark-tool`.
+- Docker expects Linux-style paths. If you cloned on your `C:\` drive, then `[ABS PATH TO THIS DIR]` would be `/c/tools-benchmark`.
 - [Docker for Windows](https://www.docker.com/docker-windows) understands `/var/run/docker.sock` even though that is not a valid path on Windows. [Docker Toolbox](https://docs.docker.com/toolbox/toolbox_install_windows/) **may** not - use at your own risk.
 
 ## Quick Start Guide (Vagrant)
@@ -56,7 +58,7 @@ required.
 
 1. Clone SSGBERK.
 
-        $ git clone --recurse-submodules https://github.com/ssgberk/benchmark-tool.git
+        $ git clone --recurse-submodules https://github.com/BenchCommons/tools-benchmark.git
 
 2. Change directories
 
@@ -76,7 +78,7 @@ required.
 
 Either on your computer, or once you open an SSH connection to your vagrant box, start the new test initialization wizard.
 
-        vagrant@SSGBERK-all:~/benchmark-tool$ ./ssgberk --new
+        vagrant@SSGBERK-all:~/FrameworkBenchmarks$ ./ssgberk --new
 
 This will walk you through the entire process of creating a new test to include in the suite.
 
@@ -240,17 +242,19 @@ Per generator and cell (in `results.json`, `schemaVersion` 2, and the summaries)
 
 #### Official Documentation
 Our official documentation can be found at
-[GitHub Wiki](https://github.com/ssgberk/benchmark-tool/wiki/).
+[GitHub Wiki](https://github.com/BenchCommons/tools-benchmark/wiki/).
 
 #### Live Results
 Results of continuous benchmarking runs are available in real time here (coming soon, after v1 release).
 
 ## Contributing
 
-The community has consistently helped in making these tests better, and we welcome any and all changes. Reviewing our contribution practices and guidelines will help to keep us all on the same page. The [contribution guide](https://github.com/ssgberk/benchmark-tool/blob/master/.github/CONTRIBUTING.md) can be found in the [SSGBERK documentation](https://github.com/ssgberk/benchmark-tool/wiki/).
+The community has consistently helped in making these tests better, and we welcome any and all changes. Reviewing our contribution practices and guidelines will help to keep us all on the same page. The [contribution guide](https://github.com/BenchCommons/tools-benchmark/blob/master/.github/CONTRIBUTING.md) can be found in the [SSGBERK documentation](https://github.com/BenchCommons/tools-benchmark/wiki/).
 
 # Português do Brasil
 # Bem-vindo ao [Static Site Generator Benchmarks (SSGBerk)]
+
+Este repositório é o [`BenchCommons/tools-benchmark`](https://github.com/BenchCommons/tools-benchmark), o executor de benchmarks da BenchCommons (antes `ssgberk/benchmark-tool`). O **SSGBerk** é o benchmark de geradores de sites estáticos que ele executa. O launcher `./ssgberk` e os nomes de imagem `ssgberk/*` continuam os mesmos.
 
 ## O que é um Static Site Generator (SSG)?
 Uma página web estática (às vezes chamada de página flat ou stationary) é uma página entregue ao usuário exatamente como foi armazenada, ao contrário das páginas web dinâmicas, que são geradas por uma aplicação web.
@@ -258,9 +262,9 @@ Uma página web estática (às vezes chamada de página flat ou stationary) é u
 ## O que é o SSGBerk?
 Um projeto derivado (fork) do TechEmpower/FrameworkBenchmarks que fornece medições de desempenho representativas em um amplo conjunto de geradores de sites estáticos. Como o tempo de build varia bastante entre os diferentes SSGs, buscamos entender o comportamento em diferentes situações. Atualmente o projeto inclui geradores em várias linguagens, entre elas `Go`, `Python`, `Java`, `Ruby`, `PHP`, `JavaScript` e outras.
 
-Se você é novo no projeto, seja bem-vindo! Fique à vontade para tirar dúvidas [aqui](https://github.com/ssgberk/benchmark-tool/issues/). Incentivamos novos geradores e colaboradores a perguntar. Estamos aqui para ajudar!
+Se você é novo no projeto, seja bem-vindo! Fique à vontade para tirar dúvidas [aqui](https://github.com/BenchCommons/tools-benchmark/issues/). Incentivamos novos geradores e colaboradores a perguntar. Estamos aqui para ajudar!
 
-Se você estiver em um diretório ou arquivo cuja finalidade não ficou clara, consulte a [estrutura de arquivos](https://github.com/ssgberk/benchmark-tool/wiki/File-Structure) na nossa documentação, que explica brevemente o uso dos principais diretórios e arquivos.
+Se você estiver em um diretório ou arquivo cuja finalidade não ficou clara, consulte a [estrutura de arquivos](https://github.com/BenchCommons/tools-benchmark/wiki/File-Structure) na nossa documentação, que explica brevemente o uso dos principais diretórios e arquivos.
 
 ## Guia de Início Rápido
 
@@ -268,7 +272,7 @@ Para começar a desenvolver, você precisa instalar o [Docker](https://docs.dock
 
 1. Clone o SSGBERK.
 
-        $ git clone --recurse-submodules https://github.com/ssgberk/benchmark-tool.git
+        $ git clone --recurse-submodules https://github.com/BenchCommons/tools-benchmark.git
 
 2. Execute um teste.
 
@@ -276,7 +280,7 @@ Para começar a desenvolver, você precisa instalar o [Docker](https://docs.dock
 
 ### Explicação do script `./ssgberk`
 
-O script de execução é bastante verboso, mas cada flag é obrigatória. Se você usa Windows, adapte o comando docker no final do script `./ssgberk` (substituindo `${SCRIPT_ROOT}` por `/c/path/to/benchmark-tool`) ou use Vagrant.
+O script de execução é bastante verboso, mas cada flag é obrigatória. Se você usa Windows, adapte o comando docker no final do script `./ssgberk` (substituindo `${SCRIPT_ROOT}` por `/c/path/to/tools-benchmark`) ou use Vagrant.
 
 O comando tem esta forma: `docker run -i [-t] --rm --network ssgberk -v /var/run/docker.sock:/var/run/docker.sock -v [FWROOT]:/FrameworkBenchmarks ssgberk/toolset [ARGS]`
 
@@ -289,7 +293,7 @@ O comando tem esta forma: `docker run -i [-t] --rm --network ssgberk -v /var/run
 
 #### Uma nota sobre o Windows:
 
-- O Docker espera caminhos no estilo Linux. Se você clonou o repositório no drive `C:\`, então `[ABS PATH TO THIS DIR]` seria `/c/benchmark-tool`.
+- O Docker espera caminhos no estilo Linux. Se você clonou o repositório no drive `C:\`, então `[ABS PATH TO THIS DIR]` seria `/c/tools-benchmark`.
 - O [Docker para Windows](https://www.docker.com/docker-windows) entende `/var/run/docker.sock`, mesmo que esse não seja um caminho válido no Windows. O [Docker Toolbox](https://docs.docker.com/toolbox/toolbox_install_windows/) **pode** não entender; use por sua conta e risco.
 
 ## Guia de Início Rápido (Vagrant)
@@ -299,7 +303,7 @@ o [Virtualbox](https://www.virtualbox.org/) e o [Vagrant](https://www.vagrantup.
 
 1. Clone o SSGBERK.
 
-        $ git clone --recurse-submodules https://github.com/ssgberk/benchmark-tool.git
+        $ git clone --recurse-submodules https://github.com/BenchCommons/tools-benchmark.git
 
 2. Entre no diretório
 
@@ -319,7 +323,7 @@ o [Virtualbox](https://www.virtualbox.org/) e o [Vagrant](https://www.vagrantup.
 
 No seu computador, ou depois de abrir uma conexão SSH com a sua box do Vagrant, inicie o assistente de criação de novo teste.
 
-        vagrant@SSGBERK-all:~/benchmark-tool$ ./ssgberk --new
+        vagrant@SSGBERK-all:~/FrameworkBenchmarks$ ./ssgberk --new
 
 Ele guia você por todo o processo de criação de um novo teste para incluir na suíte.
 
@@ -361,11 +365,11 @@ O resumo tem uma linha por gerador, com média, desvio padrão, mediana, mínimo
 
 #### Documentação oficial
 Nossa documentação oficial está disponível na
-[Wiki do GitHub](https://github.com/ssgberk/benchmark-tool/wiki/).
+[Wiki do GitHub](https://github.com/BenchCommons/tools-benchmark/wiki/).
 
 #### Resultados ao vivo
 Os resultados das execuções contínuas de benchmark estarão disponíveis em tempo real aqui (em breve, após o lançamento da v1).
 
 ## Contribuindo
 
-A comunidade tem ajudado de forma consistente a melhorar estes testes, e aceitamos qualquer mudança. Conhecer nossas práticas e diretrizes de contribuição ajuda a manter todos na mesma página. O [guia de contribuição](https://github.com/ssgberk/benchmark-tool/blob/master/.github/CONTRIBUTING.md) pode ser encontrado na [documentação do SSGBERK](https://github.com/ssgberk/benchmark-tool/wiki/).
+A comunidade tem ajudado de forma consistente a melhorar estes testes, e aceitamos qualquer mudança. Conhecer nossas práticas e diretrizes de contribuição ajuda a manter todos na mesma página. O [guia de contribuição](https://github.com/BenchCommons/tools-benchmark/blob/master/.github/CONTRIBUTING.md) pode ser encontrado na [documentação do SSGBERK](https://github.com/BenchCommons/tools-benchmark/wiki/).
