@@ -14,7 +14,7 @@ A project Forked from TechEmpower/FrameworkBenchmarks that provides representati
 
 If you're new to the project, welcome! Please feel free to ask questions [here](https://github.com/BenchCommons/tools-benchmark/issues/). We encourage new generators and contributors to ask questions. We're here to help!
 
-If you find yourself in a directory or file that you're not sure what the purpose is, checkout our [file structure](https://github.com/BenchCommons/tools-benchmark/wiki/File-Structure) in our documenation, which will briefly explain the use of relevant directories and files.
+If you find yourself in a directory or file that you're not sure what the purpose is, start with the [`toolset/`](./toolset) directory (the Python runner) and the specs in [`docs/specs/`](./docs/specs/ROADMAP.md), which explain the relevant directories and files.
 
 ## Quick Start Guide
 
@@ -241,15 +241,14 @@ Per generator and cell (in `results.json`, `schemaVersion` 2, and the summaries)
 ## Resources
 
 #### Official Documentation
-Our official documentation can be found at
-[GitHub Wiki](https://github.com/BenchCommons/tools-benchmark/wiki/).
+Our documentation lives in this repository: the [roadmap and specs](./docs/specs/ROADMAP.md), the [Python 3 toolset](./docs/specs/001-python3-toolset/spec.md), the [benchmark methodology](./docs/specs/008-benchmark-methodology/spec.md) and the [published results](./docs/results/README.md).
 
 #### Live Results
 Results of continuous benchmarking runs are available in real time here (coming soon, after v1 release).
 
 ## Contributing
 
-The community has consistently helped in making these tests better, and we welcome any and all changes. Reviewing our contribution practices and guidelines will help to keep us all on the same page. The [contribution guide](https://github.com/BenchCommons/tools-benchmark/blob/master/.github/CONTRIBUTING.md) can be found in the [SSGBERK documentation](https://github.com/BenchCommons/tools-benchmark/wiki/).
+The community has consistently helped in making these tests better, and we welcome any and all changes. Reviewing our contribution practices and guidelines will help to keep us all on the same page. The [contribution guide](https://github.com/BenchCommons/.github/blob/main/CONTRIBUTING.md) is in the BenchCommons organization repository and applies to this repository.
 
 # Português do Brasil
 # Bem-vindo ao [Static Site Generator Benchmarks (SSGBerk)]
@@ -264,7 +263,7 @@ Um projeto derivado (fork) do TechEmpower/FrameworkBenchmarks que fornece mediç
 
 Se você é novo no projeto, seja bem-vindo! Fique à vontade para tirar dúvidas [aqui](https://github.com/BenchCommons/tools-benchmark/issues/). Incentivamos novos geradores e colaboradores a perguntar. Estamos aqui para ajudar!
 
-Se você estiver em um diretório ou arquivo cuja finalidade não ficou clara, consulte a [estrutura de arquivos](https://github.com/BenchCommons/tools-benchmark/wiki/File-Structure) na nossa documentação, que explica brevemente o uso dos principais diretórios e arquivos.
+Se você estiver em um diretório ou arquivo cuja finalidade não ficou clara, comece pelo diretório [`toolset/`](./toolset) (o executor em Python) e pelas specs em [`docs/specs/`](./docs/specs/ROADMAP.md), que explicam os principais diretórios e arquivos.
 
 ## Guia de Início Rápido
 
@@ -364,12 +363,11 @@ O resumo tem uma linha por gerador, com média, desvio padrão, mediana, mínimo
 ## Recursos
 
 #### Documentação oficial
-Nossa documentação oficial está disponível na
-[Wiki do GitHub](https://github.com/BenchCommons/tools-benchmark/wiki/).
+Nossa documentação fica neste repositório: o [roadmap e as specs](./docs/specs/ROADMAP.md), o [toolset em Python 3](./docs/specs/001-python3-toolset/spec.md), a [metodologia do benchmark](./docs/specs/008-benchmark-methodology/spec.md) e os [resultados publicados](./docs/results/README.md).
 
 #### Resultados ao vivo
 Os resultados das execuções contínuas de benchmark estarão disponíveis em tempo real aqui (em breve, após o lançamento da v1).
 
 ## Contribuindo
 
-A comunidade tem ajudado de forma consistente a melhorar estes testes, e aceitamos qualquer mudança. Conhecer nossas práticas e diretrizes de contribuição ajuda a manter todos na mesma página. O [guia de contribuição](https://github.com/BenchCommons/tools-benchmark/blob/master/.github/CONTRIBUTING.md) pode ser encontrado na [documentação do SSGBERK](https://github.com/BenchCommons/tools-benchmark/wiki/).
+A comunidade tem ajudado de forma consistente a melhorar estes testes, e aceitamos qualquer mudança. Conhecer nossas práticas e diretrizes de contribuição ajuda a manter todos na mesma página. O [guia de contribuição](https://github.com/BenchCommons/.github/blob/main/CONTRIBUTING.md) está no repositório da organização BenchCommons e vale para este repositório.
