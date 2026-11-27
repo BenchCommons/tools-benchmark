@@ -6,6 +6,8 @@ Read `spec.md` and `plan.md` (Global Constraints, Contracts, Decisions, Review F
 Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>
 ```
 
+Progress is in `plan.md` (Status and blockers): tasks 1 to 3 are done (checker CI job for CS excepted), task 5 is partly done, tasks 4, 6 and 7 are not.
+
 Test command (no Docker): `python3 -m pytest -q` and `ruff check toolset tests tools`.
 
 Each task is one PR with green CI. Tasks 1 to 3 are independent; 4 needs 1; 5 needs 3 and 4; 6 needs 4; 7 needs 4.

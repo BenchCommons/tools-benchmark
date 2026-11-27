@@ -236,6 +236,17 @@ Per generator and cell (in `results.json`, `schemaVersion` 2, and the summaries)
 | T10 | Image and dependency drift between rounds | image ids, base image digest and generator versions recorded |
 | T11 | Unavoidable generator-specific work (e.g. VitePress Shiki) | documented in the generator README and counted as its real cost |
 
+## Catalog contract (in progress)
+
+BT is being generalized from SSGs to other catalogs ([#29](https://github.com/BenchCommons/tools-benchmark/issues/29)). The contract is [spec 010](docs/specs/010-catalog-contract/spec.md). What exists today:
+
+- Schemas in `schema/` for `catalog.json`, `benchmark_config.json` and the base metadata fields.
+- `python3 tools/check_catalog.py <catalog-dir>`: checks a catalog against the contract (manifest, files, runner copies, pinned Dockerfiles, config, metadata, ids, index). No Docker needed.
+- Result markers: the toolset parser accepts `BENCH_*` and the old `SSGBERK_*` names, and records `markerPrefix` and the engine per result.
+- The `algorithm` test type (`toolset/benchmark/test_types/algorithm_type.py`) and `python3 tools/run_algorithm.py <catalog-dir> <implementation-id> --n <n>`, which runs one cell of one implementation in Docker: untimed checksum verification first, timing only after it passes. A fixture catalog with an n-body implementation is in `tests/fixtures/catalogs/algorithms`; CI runs it (`catalog-algorithms-e2e`).
+
+Not there yet: `./ssgberk --catalog`, `catalogs/` submodules, per-catalog suites, `catalog` in `results.json`, the `http` test type, and the perfratio engine (#30). `./ssgberk` still measures only the `datarate` test type on `frameworks/`. `catalog-algorithms` does not use this contract yet (it needs its own layout and runner specs), and the algorithms that read names wait on [tools-dataset#1](https://github.com/BenchCommons/tools-dataset/issues/1).
+
 ## Resources
 
 #### Official Documentation
@@ -356,6 +367,10 @@ Ao final de uma execução, o diretório `results/<timestamp>/` contém:
 - `summary.md`: o mesmo resumo em Markdown.
 
 O resumo tem uma linha por gerador, com média, desvio padrão, mediana, mínimo e máximo, todos em segundos.
+
+## Contrato de catálogo (em andamento)
+
+O BT está sendo generalizado para além de SSGs ([#29](https://github.com/BenchCommons/tools-benchmark/issues/29)). O contrato é a [spec 010](docs/specs/010-catalog-contract/spec.md). Hoje existem os schemas em `schema/`, o verificador `python3 tools/check_catalog.py <catalog-dir>`, o parser que aceita marcadores `BENCH_*` e `SSGBERK_*`, o tipo de teste `algorithm` e `tools/run_algorithm.py`, que roda uma célula de uma implementação em Docker (correção sem medição primeiro, medição só depois). Ainda não existem `./ssgberk --catalog`, suites por catálogo, o tipo `http` nem o perfratio (#30). O `./ssgberk` continua medindo só `datarate` em `frameworks/`.
 
 ## Recursos
 

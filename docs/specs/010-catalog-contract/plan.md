@@ -74,6 +74,11 @@ CW: same shape with `"testTypes": ["http"]`, `"implementations": "frameworks/*/*
 | `BENCH_ALGORITHM` | `algorithm` | algorithm id | — |
 | `BENCH_N` | `algorithm` | input size | — |
 | `BENCH_DATASET` | `algorithm` | `<name>@<version>` or empty | — |
+| `BENCH_RUN_COMMAND` | `algorithm` | the config's `run_command`; empty means the cell is unsupported | — |
+| `BENCH_BUILD_COMMAND` | `algorithm` | the config's `build_command` (untimed), may be empty | — |
+| `BENCH_EXPECTED_SHA256` | `algorithm` | expected SHA-256 of stdout for `(algorithm, n)`, from the catalog's algorithm definition; empty fails verification | — |
+
+The runner's build context is the implementation directory, so it cannot read the catalog's algorithm definition or `benchmark_config.json` itself. BT reads both and passes the values above (added during implementation; the first draft of this table lacked them).
 
 Profiles (`profile`, BT 008) and `KEEP_CONTENT`/`SSGBERK_GENERATE_ONLY` stay CS-specific and unchanged.
 
@@ -180,3 +185,31 @@ Cell keys are validated against the test type's declared parameters.
 | `toolset/benchmark/test_types/algorithm_type.py`, `toolset/benchmark/test_types/http_type.py`, `toolset/benchmark/suites.py`, `toolset/benchmark/suites.json`, `tests/test_algorithm_type.py` | test types and suites (R-12–R-14, R-18) | 5 |
 | `toolset/utils/results.py`, `toolset/utils/merge_results.py` | `catalog` key, merge refusal across catalogs (R-19) | 6 |
 | `.gitmodules`, `catalogs/ssg`, `README.md`, `.github/workflows/ci.yml` | submodule, docs, CI (Migration step 2) | 7 |
+
+## Status and blockers
+
+Delivered (branch `matbrgz/catalog-contract-e2e`):
+
+| Task | State |
+|---|---|
+| 1 Schemas and validator | done: `schema/*.json`, `toolset/utils/jsonschema_lite.py` (adds `if`/`then`, `const`, `minimum`, `minItems`, `minLength` to the planned subset) |
+| 2 `tools/check_catalog.py` | done; CI runs it on the algorithms fixture. Not done: the CS fixture and the `catalog-ssg-contract` CI job, so goal 1 is not shown. The catalog's own metadata schema is not applied, only the base fields |
+| 3 Generic markers | done, with one change: the parser matches `(BENCH\|SSGBERK)_` in each pattern instead of rewriting the text, so failure reasons keep the original spelling and CS output is unchanged. Results carry `markerPrefix`, `engine`, `engineVersion` |
+| 4 Catalog selection | not done (`--catalog`, `--catalog-dir`, loader, discovery by glob) |
+| 5 Test types and suites | partly: `algorithm_type.py` (`env`, `parse_output`) and recorded-output tests. Not done: `http_type.py`, `suites.json` changes, `docker_helper` env, registering the type in `Benchmarker`/`Results` |
+| 6 `catalog` in `results.json` | not done |
+| 7 Submodule and docs | README section only; no `catalogs/ssg` submodule |
+
+End-to-end demonstration: `tools/run_algorithm.py` builds the pinned image of a fixture implementation (`tests/fixtures/catalogs/algorithms`, n-body in CPython, `n=1000`), runs the canonical runner, and parses the output with the `algorithm` type. The expected checksum for `n=1000` is the independent reference value from catalog-algorithms spec 010 (R4). Correct output gives a hyperfine timing. A second fixture implementation with a deliberate numeric error (`python-wrong`) and a cell without an expected checksum (`n=2000`) both end as `failed` with a `BENCH_VERIFY_FAIL` reason, no `STARTTIME`, no result block and no timing. `tools/run_algorithm.py` is a reference driver, not the benchmarker. CI job `catalog-algorithms-e2e` runs it with Docker.
+
+Known limits:
+
+- The runner compares the SHA-256 of raw stdout. CA spec 010 R2 also normalises CRLF to LF for text outputs; that is not done here.
+- The fixture covers one algorithm and one checked `n`. No other CA algorithm definition is copied here (CA owns them).
+- Fixture images are checked on the host architecture only (arm64 locally); the Dockerfile carries both hyperfine digests.
+
+Dependencies and blockers (all still open when this was written):
+
+- [tools-dataset#1](https://github.com/BenchCommons/tools-dataset/issues/1) (input contract, formerly `dataset-tool#1`) and `dataset-names#24`: `merge-sort`, `binary-search` and `sha-256` need name samples. `BENCH_DATASET` and the cell parameter `dataset` are declared but nothing reads them. No input format is defined here. These algorithms are blocked until that contract exists.
+- [perfratio#240](https://github.com/BenchCommons/perfratio/issues/240) and BT #30: the only engine is hyperfine. The `engine=`/`version=` header on `BENCH_RESULT_BEGIN` is parsed, but no perfratio output schema is read, and `results.json` stays at `schemaVersion: 2`.
+- CA specs 011 to 013 (layout, runner, measurement): CA has not adopted this contract. Its `meta.json` and `run.sh` differ from the illustrative manifest above, and `catalog-algorithms` is unchanged by this work.

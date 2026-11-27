@@ -1,0 +1,34 @@
+BENCH_VERIFY_OK algorithm=n-body n=1000 sha256=76de83d6d51a74f82828547423f516e7815cfe8cfea6290a2831aa173f806de7
+STARTTIME 1795817589
+BENCH_RESULT_BEGIN engine=hyperfine version=1.20.0
+{
+  "results": [
+    {
+      "command": "python3 /app/src/nbody.py ${BENCH_N}",
+      "mean": 0.01934036424666667,
+      "stddev": 0.004175367053954698,
+      "median": 0.01749540658,
+      "user": 0.01679912,
+      "system": 0.002569593333333333,
+      "min": 0.01640528058,
+      "max": 0.02412040558,
+      "times": [
+        0.02412040558,
+        0.01640528058,
+        0.01749540658
+      ],
+      "memory_usage_byte": [
+        8847360,
+        8847360,
+        8847360
+      ],
+      "exit_codes": [
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}
+BENCH_RESULT_END
+ENDTIME 1795817589

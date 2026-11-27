@@ -1,7 +1,7 @@
 # 010 Catalog Contract
 
 - **Date:** 2026-10-12
-- **Status:** proposed, awaiting review
+- **Status:** in implementation. Delivered so far: schemas, checker, generic markers, the `algorithm` parser and an end-to-end fixture run (see `plan.md`, Status). Catalog selection, suites per catalog and the `results.json` `catalog` key are not done.
 - **Repo:** `BenchCommons/benchmark-tool` (BT). This repo owns the contract; catalogs reference it and never redefine it (`.product` `CONTRACTS.md`).
 - **Issue:** #29
 - **Consumers:** `BenchCommons/catalog-ssg` (CS), `BenchCommons/catalog-algorithms` (CA), `BenchCommons/catalog-web-frameworks` (CW).
