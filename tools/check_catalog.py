@@ -17,8 +17,9 @@ The metadata `version` may come from the index entry instead (R-10, R-11).
 Directories matched by the glob with no implementation files that are not in
 the index (docs/, tests/) are skipped.
 
-Not checked yet: the catalog's own metadata schema (only the base fields of
-schema/implementation.base.schema.json are), and the `http` test type.
+Metadata is validated against the base fields (schema/implementation.base.schema.json)
+and against the catalog's own schema named by `metadata.schema`, which may $ref
+the base schema by its $id or file name. Not checked yet: the `http` test type.
 """
 import collections
 import glob
@@ -71,11 +72,34 @@ def _inside(root, path):
     return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
 
 
+def _catalog_metadata_schema(root, manifest, base_schema, bad):
+    """(schema, registry) for `metadata.schema`, or (None, None) after a
+    diagnostic. The registry lets the catalog schema $ref the base schema by its
+    $id or file name (spec 010 R-10)."""
+    path = os.path.join(root, manifest['metadata']['schema'])
+    if not os.path.isfile(path):
+        bad(path, 'metadata', 'catalog metadata schema not found')
+        return None, None
+    try:
+        schema = _load(path)
+    except ValueError as e:
+        bad(path, 'metadata', f'invalid JSON: {e}')
+        return None, None
+    if not isinstance(schema, dict):
+        bad(path, 'metadata', 'schema must be a JSON object')
+        return None, None
+    registry = {base_schema['$id']: base_schema, 'implementation.base.schema.json': base_schema}
+    return schema, registry
+
+
 def check_dockerfile(path):
     """Violations of R-4 that can be seen without building."""
     problems = []
-    with open(path, encoding='utf-8') as f:
-        lines = f.read().splitlines()
+    try:
+        with open(path, encoding='utf-8') as f:
+            lines = f.read().splitlines()
+    except UnicodeDecodeError as e:
+        return [f'not valid UTF-8 ({e.reason} at byte {e.start})']
     stages = set()
     for line in lines:
         m = re.match(r'[ \t]*FROM[ \t]+(?:--\S+[ \t]+)?(\S+)(?:[ \t]+AS[ \t]+(\S+))?', line, re.I)
@@ -96,9 +120,11 @@ def check_dockerfile(path):
 
 
 def _id_for(manifest, rel):
-    parts = rel.split('/')
+    """Implementation id from its relative path, or None when the path does not
+    have the shape the catalog type needs (algorithms: <language>/<algorithm>)."""
+    parts = rel.split(os.sep)
     if manifest['name'] == 'algorithms':
-        return f'{parts[-2]}.{parts[-1]}'
+        return f'{parts[-2]}.{parts[-1]}' if len(parts) >= 2 else None
     return parts[-1]
 
 
@@ -120,9 +146,13 @@ def check_index_entries(doc, key):
             problems.append(f'{key}[{n}]: must be an object')
             continue
         label = f'{key}[{n}] ({e.get("id")})'
-        for field in ('id', 'path', 'version'):
+        for field in ('id', 'path'):
             if not (isinstance(e.get(field), str) and e[field]):
                 problems.append(f'{label}: {field} must be a non-empty string')
+        # R-10/R-11: the version may come from the metadata file instead, so the
+        # index entry only has to be well formed when it carries one.
+        if 'version' in e and not (isinstance(e['version'], str) and e['version']):
+            problems.append(f'{label}: version must be a non-empty string')
         status = (e.get('benchmark') or {}).get('status') if isinstance(e.get('benchmark'), dict) else None
         if status not in ('active', 'wip', 'removed'):
             problems.append(f'{label}: benchmark.status must be active, wip or removed')
@@ -163,6 +193,7 @@ def check(root, skip_index=False):
             ('runner.file', (runner or {}).get('file'), root),
             ('runner.canonical', (runner or {}).get('canonical'), None),
             ('metadata.file', manifest['metadata']['file'], root),
+            ('metadata.schema', manifest['metadata']['schema'], root),
             ('index.file', manifest['index']['file'], None)):
         if not isinstance(rel, str):
             continue
@@ -188,6 +219,7 @@ def check(root, skip_index=False):
 
     config_schema = _schema('benchmark_config.schema.json')
     base_schema = _schema('implementation.base.schema.json')
+    catalog_schema, registry = _catalog_metadata_schema(root, manifest, base_schema, bad)
     seen = {}
     index = manifest['index']
     index_path = os.path.join(root, index['file'])
@@ -222,7 +254,15 @@ def check(root, skip_index=False):
         if os.path.islink(d) or not _inside(root, os.path.realpath(d)):
             bad(d, 'files', 'implementation directory is a symlink or resolves outside the catalog root')
             dirs.remove(d)
-    if not dirs:
+    misshapen = [os.path.relpath(d, root) for d in dirs
+                 if _id_for(manifest, os.path.relpath(d, root)) is None]
+    if misshapen:
+        extra = f' (and {len(misshapen) - 1} more)' if len(misshapen) > 1 else ''
+        bad(manifest_path, 'manifest',
+            f'implementations {manifest["implementations"]!r} matches {misshapen[0]!r}{extra}, '
+            'which is not <language>/<algorithm>')
+        dirs = [d for d in dirs if os.path.relpath(d, root) not in misshapen]
+    if not dirs and not misshapen:
         bad(root, 'files', f'no implementation matches {manifest["implementations"]!r}')
     for d in dirs:
         rel = os.path.relpath(d, root)
@@ -269,8 +309,20 @@ def check(root, skip_index=False):
             except ValueError as e:
                 bad(meta_path, 'metadata', f'invalid JSON: {e}')
                 continue
-            for e in validate(meta, base_schema):
+            base_errors = validate(meta, base_schema)
+            for e in base_errors:
                 bad(meta_path, 'metadata', e)
+            if catalog_schema is not None:
+                try:
+                    catalog_errors = validate(meta, catalog_schema, registry=registry)
+                except (ValueError, TypeError, KeyError, AttributeError, re.error) as e:
+                    bad(os.path.join(root, manifest['metadata']['schema']), 'metadata',
+                        f'schema cannot be applied: {e}')
+                    catalog_schema = None
+                else:
+                    for e in catalog_errors:
+                        if e not in base_errors:
+                            bad(meta_path, 'metadata', e)
             if not isinstance(meta, dict):
                 continue
             mid = meta.get('id')

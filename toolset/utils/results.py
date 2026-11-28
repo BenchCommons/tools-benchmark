@@ -17,12 +17,14 @@ from toolset.utils import summary, environment
 # accepted as an alias for all of contractVersion 1. Patterns match both, so
 # the text (and any failure reason quoted from it) is never rewritten.
 _P = r'(?:BENCH|SSGBERK)_'
-RESULT_BEGIN = _P + 'RESULT_BEGIN'
-RESULT_END = _P + 'RESULT_END'
-# BENCH_UNSUPPORTED, or its SSGBERK_ spelling SSGBERK_PROFILE_UNSUPPORTED.
-UNSUPPORTED = r'(?:BENCH_UNSUPPORTED|SSGBERK_PROFILE_UNSUPPORTED)'
-
 _BOL = r'^[ \t]*'
+# Markers start a line (R-15): search with re.M. A log line that only mentions
+# a marker mid-line is not one.
+RESULT_BEGIN = _BOL + _P + 'RESULT_BEGIN'
+RESULT_END = _BOL + _P + 'RESULT_END'
+# BENCH_UNSUPPORTED, its alias SSGBERK_UNSUPPORTED (R-16: every SSGBERK_<X>
+# aliases BENCH_<X>) and the older SSGBERK_PROFILE_UNSUPPORTED.
+UNSUPPORTED = r'(?:BENCH_UNSUPPORTED|SSGBERK_(?:PROFILE_)?UNSUPPORTED)'
 
 # results.json schemaVersion. Readers treat every key added since version 1
 # as optional; an absent schemaVersion means 1.
@@ -61,7 +63,7 @@ def classify_build_output(text, require_conformance=False):
     line = _first_line(_P + 'VERIFY_FAIL', text)
     if line:
         return 'failed', line
-    has_result = re.search(RESULT_BEGIN, text) is not None
+    has_result = re.search(RESULT_BEGIN, text, re.M) is not None
     if re.search(_BOL + UNSUPPORTED, text, re.M) and not has_result:
         return 'unsupported', None
     start = re.search(_BOL + r'STARTTIME ', text, re.M)
@@ -125,17 +127,21 @@ def parse_build_output(text, number_of_files, content_size, min_runs,
     status, _ = classify_build_output(text, require_conformance)
     if status != 'ok':
         return []
-    begin = re.search(RESULT_BEGIN + r'[ \t]*([^\n]*)', text)
+    begin = re.search(RESULT_BEGIN + r'[ \t]*([^\n]*)', text, re.M)
     if not begin:
         return []
-    end = re.search(RESULT_END, text[begin.end():])
+    header, body = begin.group(1), begin.end()
+    if header.startswith('{'):
+        # JSON on the marker's own line (accepted before spec 010): no header.
+        header, body = '', begin.start(1)
+    end = re.search(RESULT_END, text[body:], re.M)
     if not end:
         return []
     try:
-        result = json.loads(text[begin.end():begin.end() + end.start()])['results'][0]
+        result = json.loads(text[body:body + end.start()])['results'][0]
     except (ValueError, KeyError, IndexError, TypeError):
         return []
-    engine, engine_version = _engine(begin.group(1))
+    engine, engine_version = _engine(header)
     start_time = re.search(_BOL + r'STARTTIME (\d+)', text, re.M)
     end_time = re.search(_BOL + r'ENDTIME (\d+)', text, re.M)
     mean = result.get('mean')

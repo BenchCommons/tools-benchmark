@@ -142,9 +142,13 @@ def test_ssg_fixture_conforms():
 def test_ssg_version_in_metadata_only(ssg):
     _edit(ssg / "Go/hugo/generator.json", lambda d: d.update(version="0.167.0"))
     _edit(ssg / "generators.json", lambda d: d["generators"][0].pop("version"))
-    lines = check_catalog.check(str(ssg))
-    assert [line.split(": ")[1] for line in lines] == ["index"]
-    assert "version" in lines[0]
+    assert check_catalog.check(str(ssg)) == []  # R-10: either source is enough
+
+
+def test_ssg_version_in_neither_source_but_malformed_index_version(ssg):
+    _edit(ssg / "generators.json", lambda d: d["generators"][0].update(version=3))
+    assert any(": index: " in x and "version must be a non-empty string" in x
+               for x in check_catalog.check(str(ssg)))
 
 
 def test_ssg_version_absent_everywhere(ssg):
@@ -356,3 +360,100 @@ def test_duplicate_detection_is_linear_and_exact():
 
 def check_check_clean(doc):
     return check_catalog.check_index_entries(doc, "k") == []
+
+
+# --- #42 catalog metadata schema, #44 invalid UTF-8, #45 layout, #43 optional index version ---
+
+def _schema_path(root):
+    return root / json.loads((root / "catalog.json").read_text())["metadata"]["schema"]
+
+
+BASE_REF = ("https://raw.githubusercontent.com/BenchCommons/tools-benchmark/master/"
+            "schema/implementation.base.schema.json")
+
+
+def test_catalog_schema_valid_extra_field(ssg):
+    _edit(ssg / "Go/hugo/generator.json", lambda d: d.update(templateEngines=["go-template"]))
+    assert check_catalog.check(str(ssg)) == []
+
+
+def test_catalog_schema_violation_reported_once_with_path(ssg):
+    _edit(ssg / "Go/hugo/generator.json", lambda d: d.update(templateEngines="go-template"))
+    lines = check_catalog.check(str(ssg))
+    assert lines == ["Go/hugo/generator.json: metadata: /templateEngines: expected array"]
+
+
+def test_catalog_schema_base_violation_not_duplicated(ssg):
+    _edit(ssg / "Go/hugo/generator.json", lambda d: d.update(benchmark={"status": "done"}))
+    lines = [x for x in check_catalog.check(str(ssg)) if "benchmark/status" in x]
+    assert len(lines) == 1
+
+
+def test_catalog_schema_missing(ssg):
+    _schema_path(ssg).unlink()
+    lines = check_catalog.check(str(ssg))
+    assert lines == ["schema/generator.schema.json: metadata: catalog metadata schema not found"]
+
+
+def test_catalog_schema_invalid_json(ssg):
+    _schema_path(ssg).write_text("{")
+    lines = check_catalog.check(str(ssg))
+    assert len(lines) == 1 and lines[0].startswith("schema/generator.schema.json: metadata: invalid JSON")
+
+
+@pytest.mark.parametrize("text", ["[]", "5"])
+def test_catalog_schema_not_an_object(ssg, text):
+    _schema_path(ssg).write_text(text)
+    assert check_catalog.check(str(ssg)) == [
+        "schema/generator.schema.json: metadata: schema must be a JSON object"]
+
+
+def test_catalog_schema_unresolved_ref_is_a_diagnostic(ssg):
+    _schema_path(ssg).write_text(json.dumps({"allOf": [{"$ref": "https://example.com/x.json"}]}))
+    run = subprocess.run([sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(ssg)],
+                         capture_output=True, text=True)
+    assert run.returncode == 1 and "Traceback" not in run.stderr
+    assert run.stdout.count("schema cannot be applied") == 1
+
+
+def test_catalog_schema_path_confined(ssg):
+    _edit(ssg / "catalog.json", lambda d: d["metadata"].update(schema="../schema.json"))
+    lines = check_catalog.check(str(ssg))
+    assert len(lines) == 1 and "metadata.schema" in lines[0] and "'..'" in lines[0]
+
+
+def test_catalog_schema_refs_base_by_file_name(ssg):
+    _schema_path(ssg).write_text(json.dumps(
+        {"allOf": [{"$ref": "implementation.base.schema.json"}]}))
+    assert check_catalog.check(str(ssg)) == []
+    _edit(ssg / "Go/hugo/generator.json", lambda d: d.pop("name"))
+    assert any("name" in x for x in check_catalog.check(str(ssg)))
+
+
+def test_invalid_utf8_dockerfile_one_line_diagnostic(catalog):
+    dockerfile = catalog / IMPL / "python.n-body.dockerfile"
+    dockerfile.write_bytes(b"FROM python:3.12\n# \xff\xfe\n")
+    lines = check_catalog.check(str(catalog), skip_index=True)
+    assert len(lines) == 1
+    assert lines[0].startswith(f"{IMPL}/python.n-body.dockerfile: dockerfile: not valid UTF-8")
+    run = subprocess.run([sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(catalog),
+                          "--skip-index-check"], capture_output=True, text=True)
+    assert run.returncode == 1 and "Traceback" not in run.stderr
+    assert run.stdout.count("\n") == 1
+
+
+@pytest.mark.parametrize("pattern", ["*", "languages"])
+def test_algorithm_glob_matching_misshapen_paths_is_one_line(catalog, pattern):
+    _edit(catalog / "catalog.json", lambda d: d.update(implementations=pattern))
+    run = subprocess.run([sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(catalog),
+                          "--skip-index-check"], capture_output=True, text=True)
+    assert run.returncode == 1 and "Traceback" not in run.stderr
+    lines = [x for x in run.stdout.splitlines() if ": manifest: " in x]
+    assert len(lines) == 1 and "not <language>/<algorithm>" in lines[0]
+    assert lines[0].startswith("catalog.json: manifest: implementations")
+
+
+def test_index_entry_without_version_is_accepted_by_the_entry_check():
+    doc = {"schemaVersion": 1, "generatedFrom": "x",
+           "k": [{"id": "a", "path": "p", "benchmark": {"status": "active"}}]}
+    assert check_catalog.check_index_entries(doc, "k") == []

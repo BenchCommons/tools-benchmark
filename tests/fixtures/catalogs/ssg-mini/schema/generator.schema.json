@@ -1,0 +1,8 @@
+{
+  "$comment": "Fixture: a catalog schema that adds one optional field to the base fields (spec 010 R-10).",
+  "type": "object",
+  "allOf": [{"$ref": "https://raw.githubusercontent.com/BenchCommons/tools-benchmark/master/schema/implementation.base.schema.json"}],
+  "properties": {
+    "templateEngines": {"type": "array", "items": {"type": "string"}}
+  }
+}
