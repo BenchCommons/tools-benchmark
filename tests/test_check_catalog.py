@@ -122,3 +122,117 @@ def test_index_check_fails(catalog):
 def test_index_lists_missing_implementation(catalog):
     _edit(catalog / "implementations.json", lambda d: d["implementations"].pop())
     assert "index" in _rules(catalog)
+
+
+SSG = ROOT / "tests" / "fixtures" / "catalogs" / "ssg-mini"
+
+
+@pytest.fixture
+def ssg(tmp_path):
+    dest = tmp_path / "ssg"
+    shutil.copytree(SSG, dest)
+    return dest
+
+
+def test_ssg_fixture_conforms():
+    """Version only in the index, and docs/ and tests/ matched by '*/*'."""
+    assert check_catalog.check(str(SSG)) == []
+
+
+def test_ssg_version_in_metadata_only(ssg):
+    _edit(ssg / "Go/hugo/generator.json", lambda d: d.update(version="0.167.0"))
+    _edit(ssg / "generators.json", lambda d: d["generators"][0].pop("version"))
+    lines = check_catalog.check(str(ssg))
+    assert [line.split(": ")[1] for line in lines] == ["index"]
+    assert "version" in lines[0]
+
+
+def test_ssg_version_absent_everywhere(ssg):
+    _edit(ssg / "generators.json", lambda d: d["generators"][0].pop("version"))
+    lines = check_catalog.check(str(ssg))
+    assert any(line.startswith("Go/hugo/generator.json: metadata: version") for line in lines)
+
+
+@pytest.mark.parametrize("mutate,text", [
+    (lambda e: e.update(version=""), "version"),
+    (lambda e: e.pop("id"), "id"),
+    (lambda e: e.update(path=5), "path"),
+    (lambda e: e.update(benchmark={"status": "done"}), "benchmark.status"),
+    (lambda e: e.pop("benchmark"), "benchmark.status"),
+])
+def test_ssg_bad_index_entry(ssg, mutate, text):
+    _edit(ssg / "generators.json", lambda d: mutate(d["generators"][1]))
+    lines = [x for x in check_catalog.check(str(ssg)) if ": index: " in x]
+    assert lines and any(text in line for line in lines)
+
+
+@pytest.mark.parametrize("field", ["schemaVersion", "generatedFrom"])
+def test_ssg_index_top_level_fields(ssg, field):
+    _edit(ssg / "generators.json", lambda d: d.pop(field))
+    [line] = check_catalog.check(str(ssg))
+    assert ": index: " in line and field in line
+
+
+def test_ssg_stray_dir_ignored_but_listed_dir_reports_missing(ssg):
+    assert (ssg / "docs/specs").is_dir() and (ssg / "tests/reference").is_dir()
+    assert check_catalog.check(str(ssg)) == []
+    (ssg / "Python/pelican/pelican.dockerfile").unlink()
+    (ssg / "Python/pelican/benchmark_config.json").unlink()
+    (ssg / "Python/pelican/generator.json").unlink()
+    (ssg / "Python/pelican/build.sh").unlink()
+    lines = [x for x in check_catalog.check(str(ssg)) if ": files: " in x]
+    assert len(lines) == 4 and all(x.startswith("Python/pelican/") and x.endswith(": missing") for x in lines)
+
+
+# --- structurally malformed JSON: deterministic diagnostics, never a traceback ---
+
+def _set_file(path, text):
+    path.write_text(text)
+
+
+@pytest.mark.parametrize("value", ['["hugo"]', '{"x": 1}', '7', 'null'])
+def test_metadata_id_not_a_string(ssg, value):
+    meta = ssg / "Go/hugo/generator.json"
+    data = json.loads(meta.read_text())
+    meta.write_text(json.dumps(data).replace('"id": "hugo"', f'"id": {value}'))
+    lines = check_catalog.check(str(ssg))
+    assert any(": ids: id must be a string" in line for line in lines)
+    assert lines == check_catalog.check(str(ssg))
+
+
+@pytest.mark.parametrize("text", ['["not", "an", "object"]', '"s"', '3', 'null'])
+def test_metadata_not_an_object(ssg, text):
+    _set_file(ssg / "Go/hugo/generator.json", text)
+    lines = check_catalog.check(str(ssg))
+    assert any(": metadata: /: expected object" in line for line in lines)
+    assert lines == check_catalog.check(str(ssg))
+
+
+@pytest.mark.parametrize("text", ['["x"]', '"s"', '3', 'null'])
+def test_index_not_an_object(ssg, text):
+    _set_file(ssg / "generators.json", text)
+    lines = check_catalog.check(str(ssg))
+    assert any(": index: document must be a JSON object" in line for line in lines)
+    assert lines == check_catalog.check(str(ssg))
+
+
+@pytest.mark.parametrize("entry", ['["hugo"]', '"hugo"', '{"id": ["hugo"], "path": ["Go/hugo"], "version": 1}'])
+def test_index_entry_malformed(ssg, entry):
+    _edit(ssg / "generators.json", lambda d: d["generators"].append(json.loads(entry)))
+    lines = check_catalog.check(str(ssg))
+    assert any(": index: " in line for line in lines)
+    assert lines == check_catalog.check(str(ssg))
+
+
+def test_index_key_not_a_list(ssg):
+    _edit(ssg / "generators.json", lambda d: d.update(generators={"hugo": 1}))
+    lines = check_catalog.check(str(ssg))
+    assert any("generators: must be a list of entries" in line for line in lines)
+
+
+def test_malformed_input_cli_has_no_traceback(ssg):
+    _set_file(ssg / "generators.json", '["x"]')
+    _set_file(ssg / "Go/hugo/generator.json", '["x"]')
+    run = subprocess.run([sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(ssg)],
+                         capture_output=True, text=True)
+    assert run.returncode == 1 and "Traceback" not in run.stderr

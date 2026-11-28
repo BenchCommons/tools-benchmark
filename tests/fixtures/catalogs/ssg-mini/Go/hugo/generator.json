@@ -1,0 +1,7 @@
+{
+  "id": "hugo",
+  "name": "Hugo",
+  "language": "Go",
+  "license": "MIT",
+  "benchmark": {"status": "active"}
+}

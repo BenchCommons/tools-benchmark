@@ -1,0 +1,9 @@
+{
+  "contractVersion": 1,
+  "name": "ssg",
+  "testTypes": ["datarate"],
+  "implementations": "*/*",
+  "runner": {"file": "build.sh", "canonical": "Go/hugo/build.sh"},
+  "metadata": {"file": "generator.json", "schema": "schema/generator.schema.json"},
+  "index": {"file": "generators.json", "key": "generators", "check": "true"}
+}

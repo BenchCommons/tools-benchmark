@@ -7,6 +7,10 @@ Stdlib only, no Docker. Prints one `<path>: <rule>: <message>` line per
 violation and exits 1; exits 0 when the catalog conforms. Rules: manifest,
 files, runner, dockerfile, config, metadata, ids, index.
 
+The metadata `version` may come from the index entry instead (R-10, R-11).
+Directories matched by the glob with no implementation files that are not in
+the index (docs/, tests/) are skipped.
+
 Not checked yet: the catalog's own metadata schema (only the base fields of
 schema/implementation.base.schema.json are), and the `http` test type.
 """
@@ -67,6 +71,29 @@ def _id_for(manifest, rel):
     return parts[-1]
 
 
+def check_index_entries(doc, key):
+    """Violations of R-11 in the index document."""
+    problems = []
+    for field in ('schemaVersion', 'generatedFrom'):
+        if field not in doc:
+            problems.append(f'{field}: required')
+    entries = doc.get(key)
+    if not isinstance(entries, list):
+        return problems + [f'{key}: must be a list of entries']
+    for n, e in enumerate(entries):
+        if not isinstance(e, dict):
+            problems.append(f'{key}[{n}]: must be an object')
+            continue
+        label = f'{key}[{n}] ({e.get("id")})'
+        for field in ('id', 'path', 'version'):
+            if not (isinstance(e.get(field), str) and e[field]):
+                problems.append(f'{label}: {field} must be a non-empty string')
+        status = (e.get('benchmark') or {}).get('status') if isinstance(e.get('benchmark'), dict) else None
+        if status not in ('active', 'wip', 'removed'):
+            problems.append(f'{label}: benchmark.status must be active, wip or removed')
+    return problems
+
+
 def check(root, skip_index=False):
     out = []
 
@@ -109,6 +136,33 @@ def check(root, skip_index=False):
     config_schema = _schema('benchmark_config.schema.json')
     base_schema = _schema('implementation.base.schema.json')
     seen = {}
+    index = manifest['index']
+    index_path = os.path.join(root, index['file'])
+    entries = []
+    index_ok = False
+    if not os.path.isfile(index_path):
+        bad(index_path, 'index', 'missing')
+    else:
+        try:
+            index_doc = _load(index_path)
+        except ValueError as e:
+            bad(index_path, 'index', f'invalid JSON: {e}')
+        else:
+            if not isinstance(index_doc, dict):
+                bad(index_path, 'index', 'document must be a JSON object')
+            else:
+                for msg in check_index_entries(index_doc, index['key']):
+                    bad(index_path, 'index', msg)
+                if isinstance(index_doc.get(index['key']), list):
+                    entries = [e for e in index_doc[index['key']] if isinstance(e, dict)]
+                index_ok = True
+    listed_paths = {e['path'] for e in entries if isinstance(e.get('path'), str)}
+    versions = {}
+    for e in entries:
+        if isinstance(e.get('version'), str) and e['version']:
+            for k in (e.get('id'), e.get('path')):
+                if isinstance(k, str):
+                    versions[k] = e['version']
     dirs = sorted(d for d in glob.glob(os.path.join(root, manifest['implementations']))
                   if os.path.isdir(d))
     if not dirs:
@@ -118,6 +172,11 @@ def check(root, skip_index=False):
         expected_id = _id_for(manifest, rel)
         meta_path = os.path.join(d, manifest['metadata']['file'])
         dockerfile = os.path.join(d, expected_id + '.dockerfile')
+        markers = [dockerfile, os.path.join(d, 'benchmark_config.json'), meta_path]
+        if runner:
+            markers.append(os.path.join(d, runner['file']))
+        if rel not in listed_paths and not any(os.path.isfile(m) for m in markers):
+            continue  # not an implementation (docs/, tests/, ...)
         needed = [dockerfile, os.path.join(d, 'benchmark_config.json'), meta_path]
         if runner:
             needed.append(os.path.join(d, runner['file']))
@@ -148,7 +207,15 @@ def check(root, skip_index=False):
                 continue
             for e in validate(meta, base_schema):
                 bad(meta_path, 'metadata', e)
+            if not isinstance(meta, dict):
+                continue
             mid = meta.get('id')
+            if not isinstance(mid, str):
+                bad(meta_path, 'ids', f'id must be a string, got {type(mid).__name__}')
+                continue
+            mver = meta.get('version')
+            if not (isinstance(mver, str) and mver) and mid not in versions and rel not in versions:
+                bad(meta_path, 'metadata', 'version: required in the metadata file or the index entry')
             if mid != expected_id:
                 bad(meta_path, 'ids', f'id {mid!r} must be {expected_id!r} (from the directory)')
             if mid in seen:
@@ -157,17 +224,8 @@ def check(root, skip_index=False):
             if not ID_RE.match(str(mid)):
                 bad(meta_path, 'ids', f'id {mid!r} does not match {ID_RE.pattern}')
 
-    index = manifest['index']
-    index_path = os.path.join(root, index['file'])
-    if not os.path.isfile(index_path):
-        bad(index_path, 'index', 'missing')
-    else:
-        try:
-            entries = _load(index_path).get(index['key'], [])
-        except ValueError as e:
-            bad(index_path, 'index', f'invalid JSON: {e}')
-            entries = []
-        listed = {e.get('id'): e.get('path') for e in entries}
+    if index_ok:
+        listed = {e['id']: e.get('path') for e in entries if isinstance(e.get('id'), str)}
         for mid, rel in seen.items():
             if listed.get(mid) != rel:
                 bad(index_path, 'index', f'{mid!r} is missing or has another path')

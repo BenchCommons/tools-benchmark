@@ -1,0 +1,6 @@
+{
+  "framework": "hugo",
+  "tests": [{"default": {"approach": "Realistic", "classification": "Micro", "framework": "hugo", "language": "Go", "display_name": "hugo", "notes": "", "versus": ""}}],
+  "content": [{"folder": "content/post", "type": "3minus", "extension": "md"}],
+  "config": [{"build_command": "hugo", "output_folder": "public", "output_glob": "post/*/index.html"}]
+}

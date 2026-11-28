@@ -1,0 +1,6 @@
+{
+  "framework": "pelican",
+  "tests": [{"default": {"approach": "Realistic", "classification": "Micro", "framework": "pelican", "language": "Python", "display_name": "pelican", "notes": "", "versus": ""}}],
+  "content": [{"folder": "content/post", "type": "3minus", "extension": "md"}],
+  "config": [{"build_command": "pelican", "output_folder": "public", "output_glob": "post/*/index.html"}]
+}

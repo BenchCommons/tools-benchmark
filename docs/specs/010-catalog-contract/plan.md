@@ -193,7 +193,7 @@ Delivered (branch `matbrgz/catalog-contract-e2e`):
 | Task | State |
 |---|---|
 | 1 Schemas and validator | done: `schema/*.json`, `toolset/utils/jsonschema_lite.py` (adds `if`/`then`, `const`, `minimum`, `minItems`, `minLength` to the planned subset) |
-| 2 `tools/check_catalog.py` | done; CI runs it on the algorithms fixture. Not done: the CS fixture and the `catalog-ssg-contract` CI job, so goal 1 is not shown. The catalog's own metadata schema is not applied, only the base fields |
+| 2 `tools/check_catalog.py` | done; CI runs it on the algorithms fixture. Checked against the real CS default branch plus a `catalog.json`: exit 0 (before: 63 `version: required` and 28 `files: missing` for `docs/` and `tests/`). `version` may come from the metadata or the index entry (R-10, R-11); glob matches with no implementation files and no index entry are skipped; index entries are validated (R-11); malformed JSON types (list/scalar for id, metadata or index) give diagnostics, not a traceback. Fixture: `tests/fixtures/catalogs/ssg-mini/`. Not done: the `catalog-ssg-contract` CI job in CS The catalog's own metadata schema is not applied, only the base fields |
 | 3 Generic markers | done, with one change: the parser matches `(BENCH\|SSGBERK)_` in each pattern instead of rewriting the text, so failure reasons keep the original spelling and CS output is unchanged. Results carry `markerPrefix`, `engine`, `engineVersion` |
 | 4 Catalog selection | not done (`--catalog`, `--catalog-dir`, loader, discovery by glob) |
 | 5 Test types and suites | partly: `algorithm_type.py` (`env`, `parse_output`) and recorded-output tests. Not done: `http_type.py`, `suites.json` changes, `docker_helper` env, registering the type in `Benchmarker`/`Results` |
