@@ -26,6 +26,35 @@ def _is_number(value):
             and math.isfinite(value))
 
 
+_SCALAR_KEYS = ('stddev', 'median', 'min', 'max', 'user', 'system')
+
+
+def _shape_problem(block, runs):
+    """Why a parsed result block is not a usable timing, or None.
+
+    `mean` and `times` are required, `times` has exactly `runs` entries, and
+    every numeric field that is present is finite (NaN and Infinity are not
+    valid JSON for result.json and not a measurement).
+    """
+    if not _is_number(block.get('mean')):
+        return 'result block has no finite numeric mean'
+    times = block.get('times')
+    if not isinstance(times, list) or not times or not all(_is_number(t) for t in times):
+        return 'result block has no finite numeric times'
+    if len(times) != runs:
+        return f'result block has {len(times)} times, expected {runs}'
+    for key in _SCALAR_KEYS:
+        value = block.get(key)
+        if value is not None and not _is_number(value):
+            return f'result block field {key} is not a finite number'
+    for key in ('memoryUsageBytes', 'peakRssBytes'):
+        value = block.get(key)
+        values = value if isinstance(value, list) else [value]
+        if not all(v is None or _is_number(v) for v in values):
+            return f'result block field {key} is not finite numbers'
+    return None
+
+
 def env(cell, test, expected_sha256, runs=3, warmup=1, verbose=False):
     """Environment the runner reads (plan.md, Runner environment).
 
@@ -63,11 +92,9 @@ def parse_output(raw, cell, runs=3):
     if not parsed:
         return 'failed', 'protocol: no parseable result block', []
     block = parsed[0]
-    mean, times = block.get('mean'), block.get('times')
-    if not _is_number(mean):
-        return 'failed', 'protocol: result block has no numeric mean', []
-    if not isinstance(times, list) or not times or not all(_is_number(t) for t in times):
-        return 'failed', 'protocol: result block has no times', []
+    problem = _shape_problem(block, runs)
+    if problem:
+        return 'failed', 'protocol: ' + problem, []
     result = {k: block.get(k) for k in _TIMING_KEYS}
     result.update(algorithm=cell['algorithm'], n=cell['n'], minRuns=runs, status='ok',
                   correctness='ok')

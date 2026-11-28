@@ -60,7 +60,7 @@ TechEmpower solved the same problem for web frameworks: a per-implementation `be
   - every downloaded tool, toolchain and engine is installed at an exact version, set by an `ARG <NAME>_VERSION=` line (CS `hugo.dockerfile`: `HYPERFINE_VERSION`, `HUGO_VERSION`);
   - package-manager installs use a lockfile or exact versions;
   - the engine (hyperfine 1.20.0 today; perfratio after BT #30) is installed in the image, so timing happens inside the container and never wraps `docker run`;
-  - the image works on `linux/amd64` and `linux/arm64`, or the metadata says which one it supports (R-10 `platforms`).
+  - the image works on `linux/amd64` and `linux/arm64`, or the metadata says which one it supports (R-10 `platforms`). The fixture's Dockerfile pins hyperfine for both, but BT's `catalog-algorithms-e2e` job runs on `ubuntu-24.04` (amd64) only, so the arm64 path is not built in CI (BT #46); `plan.md` (Status) keeps the same statement.
 
 ### Runner
 

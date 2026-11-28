@@ -230,3 +230,74 @@ def test_non_finite_mean_or_times_fail(bad):
         assert needle in ok
         status, reason, results = algorithm_type.parse_output(ok.replace(needle, repl), CELL)
         assert status == "failed" and results == [] and reason.startswith("protocol:")
+
+
+def _ok_with(**fields):
+    raw = (FIX / "raw_algorithm_ok.txt").read_text()
+    begin = raw.index("BENCH_RESULT_BEGIN")
+    start = raw.index("{", begin)
+    end = raw.index("BENCH_RESULT_END")
+    doc = json.loads(raw[start:end])
+    doc["results"][0].update(fields)
+    return raw[:start] + json.dumps(doc) + "\n" + raw[end:]
+
+
+@pytest.mark.parametrize("key", ["stddev", "median", "min", "max", "user", "system"])
+def test_non_finite_scalar_fields_fail(key):
+    status, reason, results = algorithm_type.parse_output(
+        _ok_with(**{key: float("nan")}), CELL)
+    assert status == "failed" and results == [] and key in reason
+
+
+def test_non_numeric_scalar_field_fails():
+    status, reason, results = algorithm_type.parse_output(_ok_with(stddev="x"), CELL)
+    assert status == "failed" and results == [] and reason.startswith("protocol:")
+
+
+@pytest.mark.parametrize("times", [[0.1], [0.1, 0.1, 0.1, 0.1], []])
+def test_times_cardinality_must_equal_runs(times):
+    status, reason, results = algorithm_type.parse_output(_ok_with(times=times), CELL, runs=3)
+    assert status == "failed" and results == [] and reason.startswith("protocol:")
+
+
+def test_null_stddev_is_allowed():
+    # hyperfine reports no stddev for a single run
+    status, _, [r] = algorithm_type.parse_output(_ok_with(stddev=None), CELL, runs=3)
+    assert status == "ok" and r["stddev"] is None
+
+
+def test_non_finite_memory_fails():
+    status, reason, _ = algorithm_type.parse_output(
+        _ok_with(memory_usage_byte=[float("inf")]), CELL)
+    assert status == "failed" and "memoryUsageBytes" in reason
+
+
+@docker
+def test_e2e_run_timeout_fails_and_stops_the_container(tmp_path):
+    # Same temporary-catalog approach as the crash test: the run command
+    # sleeps, so the verification run outlives --run-timeout.
+    catalog = tmp_path / "catalog"
+    shutil.copytree(CATALOG, catalog)
+    src = catalog / "languages" / "python" / "n-body"
+    dst = catalog / "languages" / "python-slow" / "n-body"
+    dst.parent.mkdir()
+    src.rename(dst)
+    (dst / "python.n-body.dockerfile").rename(dst / "python-slow.n-body.dockerfile")
+    for name in ("meta.json", "benchmark_config.json"):
+        path = dst / name
+        path.write_text(path.read_text().replace("python.n-body", "python-slow.n-body"))
+    cfg = dst / "benchmark_config.json"
+    data = json.loads(cfg.read_text())
+    data["tests"][0]["default"]["run_command"] = "sleep 120"
+    cfg.write_text(json.dumps(data))
+    out = tmp_path / "out"
+    run = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "run_algorithm.py"), str(catalog),
+         "python-slow.n-body", "--n", "1000", "--out", str(out), "--run-timeout", "5"],
+        capture_output=True, text=True)
+    assert run.returncode == 1, run.stdout + run.stderr
+    doc = _assert_no_timing(out, run)
+    assert doc["reason"] == "timeout"
+    left = subprocess.run(["docker", "ps", "-q", "--filter", "name=bench-run-"],
+                          capture_output=True, text=True)
+    assert left.stdout.strip() == ""

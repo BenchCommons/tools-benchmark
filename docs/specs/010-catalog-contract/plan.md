@@ -206,7 +206,7 @@ Known limits:
 
 - The runner compares the SHA-256 of raw stdout. CA spec 010 R2 also normalises CRLF to LF for text outputs; that is not done here.
 - The fixture covers one algorithm and one checked `n`. No other CA algorithm definition is copied here (CA owns them).
-- Fixture images are checked on the host architecture only (arm64 locally); the Dockerfile carries both hyperfine digests. The CI job `catalog-algorithms-e2e` runs on `ubuntu-24.04` (amd64) only, so the arm64 pin is not built in CI (BT #46). `tools/run_algorithm.py` has `--build-timeout` and `--run-timeout` (default 1800 s) and exits 1 on a non-zero container exit, a missing numeric `mean` or `times`, or a timeout.
+- Fixture images are checked on the host architecture only (arm64 locally); the Dockerfile carries both hyperfine digests. The CI job `catalog-algorithms-e2e` runs on `ubuntu-24.04` (amd64) only, so the arm64 pin is not built in CI (BT #46). `tools/run_algorithm.py` has `--build-timeout` and `--run-timeout` (default 1800 s). It exits 1 on a non-zero container exit, a result block whose `mean` or `times` is missing or not finite, whose `times` count differs from `--runs`, or whose other numeric fields are not finite, and on a timeout. A `docker run` timeout also runs `docker kill` on the named container; a `docker build` timeout stops only the client, so the daemon may finish the build. A malformed algorithm definition or metadata file exits with a message naming the file. The timeout and kill behaviour is covered with Docker by `test_e2e_run_timeout_fails_and_stops_the_container`.
 
 Dependencies and blockers (all still open when this was written):
 

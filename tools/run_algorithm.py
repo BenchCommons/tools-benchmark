@@ -22,6 +22,7 @@ import os
 import re
 import subprocess
 import sys
+import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -63,11 +64,44 @@ def validate_args(args):
             raise SystemExit(f'--{name.replace("_", "-")} must be a finite positive number')
 
 
+def _load_json(path):
+    try:
+        with open(path, encoding='utf-8') as f:
+            return json.load(f)
+    except (OSError, ValueError) as e:
+        raise SystemExit(f'{path}: cannot read JSON: {e}')
+
+
+def expected_checksum(path, n):
+    """Expected SHA-256 for cell `n` from an algorithm definition, '' if the
+    cell is absent (the runner then fails verification). Malformed definitions
+    exit with a message."""
+    doc = _load_json(path)
+    cells = doc.get('cells') if isinstance(doc, dict) else None
+    if not isinstance(cells, dict):
+        raise SystemExit(f'{path}: "cells" must be an object keyed by n')
+    cell = cells.get(str(n), {})
+    if not isinstance(cell, dict):
+        raise SystemExit(f'{path}: cells[{n!r}] must be an object')
+    sha = cell.get('sha256', '')
+    if not isinstance(sha, str):
+        raise SystemExit(f'{path}: cells[{n!r}].sha256 must be a string')
+    return sha
+
+
+def kill_container(name):
+    """Stop a container whose `docker run` client was killed by a timeout."""
+    try:
+        subprocess.run(['docker', 'kill', name], capture_output=True, timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        print(f'could not kill container {name}', file=sys.stderr)
+
+
 def find_implementation(root, impl_id):
     for path in sorted(glob.glob(os.path.join(root, '*', '*', '*', 'meta.json'))):
-        with open(path, encoding='utf-8') as f:
-            if json.load(f).get('id') == impl_id:
-                return os.path.dirname(path)
+        meta = _load_json(path)
+        if isinstance(meta, dict) and meta.get('id') == impl_id:
+            return os.path.dirname(path)
     raise SystemExit(f'implementation {impl_id!r} not found in {root}')
 
 
@@ -88,15 +122,14 @@ def main(argv):
 
     root = os.path.abspath(args.catalog_dir)
     impl = find_implementation(root, args.implementation)
-    with open(os.path.join(impl, 'benchmark_config.json'), encoding='utf-8') as f:
-        test = validate_config(json.load(f), os.path.join(impl, 'benchmark_config.json'))
+    config_path = os.path.join(impl, 'benchmark_config.json')
+    test = validate_config(_load_json(config_path), config_path)
     algorithm = test['algorithm']
     cell = {'algorithm': algorithm, 'n': args.n}
     expected = ''
     definition = os.path.join(root, 'algorithms', algorithm + '.json')
     if os.path.isfile(definition):
-        with open(definition, encoding='utf-8') as f:
-            expected = json.load(f)['cells'].get(str(args.n), {}).get('sha256', '')
+        expected = expected_checksum(definition, args.n)
 
     image = f'bench-catalog/{args.implementation}:local'
     out = args.out or os.path.join(root, 'results', args.implementation)
@@ -115,13 +148,15 @@ def main(argv):
             print(f'build failed for {args.implementation}', file=sys.stderr)
             return 1
         env = algorithm_type.env(cell, test, expected, args.runs, args.warmup)
-        cmd = ['docker', 'run', '--rm', '--network', 'none']
+        name = f'bench-run-{uuid.uuid4().hex[:12]}'
+        cmd = ['docker', 'run', '--rm', '--name', name, '--network', 'none']
         for key, value in env.items():
             cmd += ['-e', f'{key}={value}']
         try:
             run = subprocess.run(cmd + [image], capture_output=True, text=True,
                                  timeout=args.run_timeout)
         except subprocess.TimeoutExpired:
+            kill_container(name)
             status, reason, results = 'failed', 'timeout', []
             print(f'run timed out for {args.implementation}', file=sys.stderr)
         else:

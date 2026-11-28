@@ -165,3 +165,54 @@ def test_invalid_implementation_id(no_docker, tmp_path, impl):
 def test_unknown_implementation(no_docker, tmp_path):
     with pytest.raises(SystemExit, match="not found"):
         run_algorithm.main([str(CATALOG), "nope.x", "--n", "10", "--out", str(tmp_path)])
+
+
+def test_run_timeout_kills_the_named_container(monkeypatch, tmp_path):
+    calls = _fake_run(monkeypatch, SimpleNamespace(returncode=0, stdout=OK_RAW),
+                      timeout_on="run")
+    rc, doc = _drive(tmp_path)
+    run_cmd = next(c for c, _ in calls if c[1] == "run")
+    name = run_cmd[run_cmd.index("--name") + 1]
+    assert ["docker", "kill", name] in [c for c, _ in calls]
+    assert rc == 1 and doc["reason"] == "timeout"
+    assert (tmp_path / "raw.txt").read_text() == ""
+
+
+def test_build_timeout_does_not_start_a_container(monkeypatch, tmp_path):
+    calls = _fake_run(monkeypatch, SimpleNamespace(returncode=0, stdout=OK_RAW),
+                      timeout_on="build")
+    _drive(tmp_path)
+    assert [c[1] for c, _ in calls] == ["build"]
+
+
+def _definition_catalog(tmp_path, text):
+    import shutil
+    dest = tmp_path / "cat"
+    shutil.copytree(CATALOG, dest)
+    (dest / "algorithms" / "n-body.json").write_text(text)
+    return dest
+
+
+@pytest.mark.parametrize("text", [
+    "{}", "[]", "not json", '{"cells": []}', '{"cells": {"1000": 5}}',
+    '{"cells": {"1000": {"sha256": 7}}}',
+])
+def test_malformed_algorithm_definition_exits_with_message(no_docker, tmp_path, text):
+    catalog = _definition_catalog(tmp_path, text)
+    with pytest.raises(SystemExit) as e:
+        run_algorithm.main([str(catalog), IMPL, "--n", "1000", "--out", str(tmp_path / "o")])
+    assert "n-body.json" in str(e.value)
+
+
+def test_definition_without_the_cell_still_runs_and_fails_verification(monkeypatch, tmp_path):
+    catalog = _definition_catalog(tmp_path, '{"cells": {}}')
+    _fake_run(monkeypatch, SimpleNamespace(returncode=1, stdout="BENCH_VERIFY_FAIL x\n"))
+    rc = run_algorithm.main([str(catalog), IMPL, "--n", "1000", "--out", str(tmp_path / "o")])
+    assert rc == 1
+
+
+def test_malformed_meta_json_exits_with_message(no_docker, tmp_path):
+    catalog = _definition_catalog(tmp_path, '{"cells": {}}')
+    (catalog / "languages" / "python" / "n-body" / "meta.json").write_text("{")
+    with pytest.raises(SystemExit, match="meta.json"):
+        run_algorithm.main([str(catalog), IMPL, "--n", "1000", "--out", str(tmp_path / "o")])
