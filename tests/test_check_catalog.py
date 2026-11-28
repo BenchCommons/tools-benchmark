@@ -236,3 +236,123 @@ def test_malformed_input_cli_has_no_traceback(ssg):
     run = subprocess.run([sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(ssg)],
                          capture_output=True, text=True)
     assert run.returncode == 1 and "Traceback" not in run.stderr
+
+
+# --- untrusted input: path confinement, symlinks, regex cost, duplicate ids ---
+
+def _lines(root, rule):
+    return [x for x in check_catalog.check(str(root), skip_index=True) if f": {rule}: " in x]
+
+
+@pytest.mark.parametrize("edit", [
+    lambda d: d.update(implementations="/etc/*"),
+    lambda d: d["runner"].update(file="/etc/passwd"),
+    lambda d: d["runner"].update(canonical="/etc/passwd"),
+    lambda d: d["metadata"].update(file="/etc/passwd"),
+    lambda d: d["index"].update(file="/etc/passwd"),
+])
+def test_manifest_absolute_path_rejected(catalog, edit):
+    _edit(catalog / "catalog.json", edit)
+    lines = _lines(catalog, "manifest")
+    assert len(lines) == 1 and "must be relative" in lines[0]
+    assert check_catalog.check(str(catalog), skip_index=True) == lines
+
+
+@pytest.mark.parametrize("edit", [
+    lambda d: d.update(implementations="../*/*"),
+    lambda d: d["runner"].update(file="../run.sh"),
+    lambda d: d["runner"].update(canonical="../x/run.sh"),
+    lambda d: d["metadata"].update(file="a/../../meta.json"),
+    lambda d: d["index"].update(file="../implementations.json"),
+])
+def test_manifest_dotdot_rejected(catalog, edit):
+    _edit(catalog / "catalog.json", edit)
+    lines = _lines(catalog, "manifest")
+    assert len(lines) == 1 and "'..'" in lines[0]
+    assert check_catalog.check(str(catalog), skip_index=True) == lines
+
+
+def test_manifest_path_resolving_outside_root(catalog, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "implementations.json").write_text("{}")
+    (catalog / "link").symlink_to(outside)
+    _edit(catalog / "catalog.json", lambda d: d["index"].update(file="link/implementations.json"))
+    lines = _lines(catalog, "manifest")
+    assert len(lines) == 1 and "outside the catalog root" in lines[0]
+
+
+def test_canonical_symlink_outside_root(catalog, tmp_path):
+    outside = tmp_path / "run.sh"
+    outside.write_bytes((catalog / IMPL / "run.sh").read_bytes())
+    canonical = catalog / "tools" / "run.sh"
+    canonical.parent.mkdir(exist_ok=True)
+    _edit(catalog / "catalog.json", lambda d: d["runner"].update(canonical="tools/run.sh"))
+    canonical.unlink()
+    canonical.symlink_to(outside)
+    lines = _lines(catalog, "manifest")
+    assert len(lines) == 1 and "runner.canonical" in lines[0] and "outside" in lines[0]
+
+
+def test_symlinked_runner_is_a_violation(catalog):
+    run = catalog / IMPL / "run.sh"
+    canonical = json.loads((catalog / "catalog.json").read_text())["runner"]["canonical"]
+    run.unlink()
+    run.symlink_to(catalog / canonical)
+    lines = _lines(catalog, "runner")
+    assert len(lines) == 1 and "symlink" in lines[0]
+
+
+def test_symlink_in_implementation_dir(catalog):
+    (catalog / IMPL / "extra").symlink_to(catalog / "catalog.json")
+    lines = _lines(catalog, "files")
+    assert len(lines) == 1 and "symlink" in lines[0]
+
+
+def test_dockerfile_blank_lines_are_not_quadratic(tmp_path):
+    import time
+    path = tmp_path / "x.dockerfile"
+    path.write_text("FROM python:3.12\nRUN curl https://example.com/x\n" + "\n" * 50000 + "ARG\n")
+    start = time.perf_counter()
+    problems = check_catalog.check_dockerfile(str(path))
+    assert time.perf_counter() - start < 1
+    assert any("_VERSION" in p for p in problems)
+
+
+def test_duplicate_index_ids_reported(ssg):
+    _edit(ssg / "generators.json", lambda d: d["generators"].append(dict(d["generators"][0])))
+    lines = [x for x in check_catalog.check(str(ssg), skip_index=True) if ": index: " in x]
+    assert any("duplicate id" in x for x in lines)
+
+
+@pytest.mark.parametrize("edit", [
+    lambda d: d.update(implementations="languages/*/n\u0000body"),
+    lambda d: d["runner"].update(file="run\u0000.sh"),
+    lambda d: d["runner"].update(canonical="tools/run\u0000.sh"),
+    lambda d: d["metadata"].update(file="meta\u0000.json"),
+    lambda d: d["index"].update(file="impl\u0000.json"),
+])
+def test_manifest_nul_rejected_without_traceback(catalog, edit):
+    _edit(catalog / "catalog.json", edit)
+    lines = _lines(catalog, "manifest")
+    assert len(lines) == 1 and "NUL" in lines[0]
+    run = subprocess.run([sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(catalog)],
+                         capture_output=True, text=True)
+    assert run.returncode == 1 and "Traceback" not in run.stderr
+
+
+def test_duplicate_detection_is_linear_and_exact():
+    import time
+    entries = [{"id": f"i{n}", "path": f"p{n}", "version": "1",
+                "benchmark": {"status": "active"}} for n in range(50000)]
+    doc = {"schemaVersion": 1, "generatedFrom": "x", "k": entries}
+    start = time.perf_counter()
+    assert check_check_clean(doc)
+    assert time.perf_counter() - start < 2
+    entries += [dict(entries[0]), dict(entries[0]), dict(entries[1])]
+    msgs = [m for m in check_catalog.check_index_entries(doc, "k") if "duplicate" in m]
+    assert msgs == ["k: duplicate id 'i0' (3 entries)", "k: duplicate id 'i1' (2 entries)"]
+
+
+def check_check_clean(doc):
+    return check_catalog.check_index_entries(doc, "k") == []

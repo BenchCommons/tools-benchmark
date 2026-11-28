@@ -8,6 +8,8 @@ verification never yields timing numbers.
 Not yet wired into Benchmarker or Results: `benchmark_config.py` registers
 only `datarate`. See docs/specs/010-catalog-contract/plan.md (Status).
 """
+import math
+
 from toolset.benchmark.test_types.framework_test_type import FrameworkTestType
 from toolset.utils.results import classify_build_output, parse_build_output
 
@@ -17,6 +19,11 @@ CONFIG_KEYS = ['run_command']
 _TIMING_KEYS = ('mean', 'stddev', 'median', 'min', 'max', 'times', 'user', 'system',
                 'memoryUsageBytes', 'peakRssBytes', 'startTime', 'endTime',
                 'markerPrefix', 'engine', 'engineVersion')
+
+
+def _is_number(value):
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value))
 
 
 def env(cell, test, expected_sha256, runs=3, warmup=1, verbose=False):
@@ -49,10 +56,19 @@ def parse_output(raw, cell, runs=3):
     status, reason = classify_build_output(raw)
     if status != 'ok':
         return status, reason, []
-    parsed = parse_build_output(raw, None, None, runs)
+    try:
+        parsed = parse_build_output(raw, None, None, runs)
+    except (TypeError, ValueError, ZeroDivisionError) as e:
+        return 'failed', f'protocol: unparseable result block ({type(e).__name__})', []
     if not parsed:
         return 'failed', 'protocol: no parseable result block', []
-    result = {k: parsed[0].get(k) for k in _TIMING_KEYS}
+    block = parsed[0]
+    mean, times = block.get('mean'), block.get('times')
+    if not _is_number(mean):
+        return 'failed', 'protocol: result block has no numeric mean', []
+    if not isinstance(times, list) or not times or not all(_is_number(t) for t in times):
+        return 'failed', 'protocol: result block has no times', []
+    result = {k: block.get(k) for k in _TIMING_KEYS}
     result.update(algorithm=cell['algorithm'], n=cell['n'], minRuns=runs, status='ok',
                   correctness='ok')
     return 'ok', None, [result]

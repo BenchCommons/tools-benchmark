@@ -198,3 +198,35 @@ def test_e2e_run_command_crash_fails_without_timing(tmp_path):
     assert _lines(out) == ["BENCH_VERIFY_FAIL algorithm=n-body n=1000 exit=7"]
     doc = _assert_no_timing(out, run)
     assert doc["reason"] == "BENCH_VERIFY_FAIL algorithm=n-body n=1000 exit=7"
+
+
+def _block(raw, drop):
+    return "\n".join(line for line in raw.splitlines() if drop not in line) + "\n"
+
+
+def test_result_block_without_mean_is_a_protocol_failure():
+    raw = _block((FIX / "raw_algorithm_ok.txt").read_text(), '"mean"')
+    status, reason, results = algorithm_type.parse_output(raw, CELL)
+    assert status == "failed" and results == []
+    assert reason.startswith("protocol:") and "mean" in reason
+
+
+def test_result_block_with_non_numeric_mean_or_times_fails():
+    ok = (FIX / "raw_algorithm_ok.txt").read_text()
+    bad_mean = ok.replace('"mean": 0.01934036424666667', '"mean": "fast"')
+    assert algorithm_type.parse_output(bad_mean, CELL)[0] == "failed"
+    bad_bool = ok.replace('"mean": 0.01934036424666667', '"mean": true')
+    assert algorithm_type.parse_output(bad_bool, CELL)[0] == "failed"
+    status, reason, results = algorithm_type.parse_output(
+        ok.replace('"times": [', '"times_x": ['), CELL)
+    assert status == "failed" and results == [] and reason.startswith("protocol:")
+
+
+@pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+def test_non_finite_mean_or_times_fail(bad):
+    ok = (FIX / "raw_algorithm_ok.txt").read_text()
+    for needle, repl in (('"mean": 0.01934036424666667', f'"mean": {bad}'),
+                         ('"times": [', f'"times": [{bad}, ')):
+        assert needle in ok
+        status, reason, results = algorithm_type.parse_output(ok.replace(needle, repl), CELL)
+        assert status == "failed" and results == [] and reason.startswith("protocol:")

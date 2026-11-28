@@ -206,7 +206,7 @@ Known limits:
 
 - The runner compares the SHA-256 of raw stdout. CA spec 010 R2 also normalises CRLF to LF for text outputs; that is not done here.
 - The fixture covers one algorithm and one checked `n`. No other CA algorithm definition is copied here (CA owns them).
-- Fixture images are checked on the host architecture only (arm64 locally); the Dockerfile carries both hyperfine digests.
+- Fixture images are checked on the host architecture only (arm64 locally); the Dockerfile carries both hyperfine digests. The CI job `catalog-algorithms-e2e` runs on `ubuntu-24.04` (amd64) only, so the arm64 pin is not built in CI (BT #46). `tools/run_algorithm.py` has `--build-timeout` and `--run-timeout` (default 1800 s) and exits 1 on a non-zero container exit, a missing numeric `mean` or `times`, or a timeout.
 
 Dependencies and blockers (all still open when this was written):
 

@@ -241,7 +241,7 @@ Per generator and cell (in `results.json`, `schemaVersion` 2, and the summaries)
 BT is being generalized from SSGs to other catalogs ([#29](https://github.com/BenchCommons/tools-benchmark/issues/29)). The contract is [spec 010](docs/specs/010-catalog-contract/spec.md). What exists today:
 
 - Schemas in `schema/` for `catalog.json`, `benchmark_config.json` and the base metadata fields.
-- `python3 tools/check_catalog.py <catalog-dir>`: checks a catalog against the contract (manifest, files, runner copies, pinned Dockerfiles, config, metadata, ids, index). No Docker needed.
+- `python3 tools/check_catalog.py <catalog-dir>`: checks a catalog against the contract (manifest, files, runner copies, pinned Dockerfiles, config, metadata, ids, index). No Docker needed, but the `index.check` command from the catalog's `catalog.json` runs through the shell, so it executes catalog code: run it only on catalogs you trust, or pass `--skip-index-check` to skip that step. Manifest paths must be relative and stay inside the catalog, and symlinks inside implementation directories are reported.
 - Result markers: the toolset parser accepts `BENCH_*` and the old `SSGBERK_*` names, and records `markerPrefix` and the engine per result.
 - The `algorithm` test type (`toolset/benchmark/test_types/algorithm_type.py`) and `python3 tools/run_algorithm.py <catalog-dir> <implementation-id> --n <n>`, which runs one cell of one implementation in Docker: untimed checksum verification first, timing only after it passes. A fixture catalog with an n-body implementation is in `tests/fixtures/catalogs/algorithms`; CI runs it (`catalog-algorithms-e2e`).
 

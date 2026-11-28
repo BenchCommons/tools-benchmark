@@ -3,9 +3,15 @@
 
     python3 tools/check_catalog.py <catalog-dir> [--skip-index-check]
 
-Stdlib only, no Docker. Prints one `<path>: <rule>: <message>` line per
+Stdlib only. Without --skip-index-check it also runs the manifest's
+`index.check` command through the shell, which executes catalog code: run it
+only on catalogs you trust, or pass --skip-index-check. Prints one `<path>: <rule>: <message>` line per
 violation and exits 1; exits 0 when the catalog conforms. Rules: manifest,
 files, runner, dockerfile, config, metadata, ids, index.
+
+Inputs are untrusted: manifest paths must be relative, free of '..' and
+resolve inside the catalog root, and symlinks inside implementation
+directories are violations (the runner must be a real copy, R-3, R-5).
 
 The metadata `version` may come from the index entry instead (R-10, R-11).
 Directories matched by the glob with no implementation files that are not in
@@ -14,6 +20,7 @@ the index (docs/, tests/) are skipped.
 Not checked yet: the catalog's own metadata schema (only the base fields of
 schema/implementation.base.schema.json are), and the `http` test type.
 """
+import collections
 import glob
 import json
 import os
@@ -40,6 +47,30 @@ def _schema(name):
     return _load(os.path.join(SCHEMAS, name))
 
 
+def _path_problem(root, rel, base=None):
+    """Why manifest path `rel` (joined to `base`, default root) is unsafe, or None."""
+    if '\0' in rel:
+        return f'path {rel!r} must not contain NUL'
+    if os.path.isabs(rel) or rel.startswith(('/', '\\')) or re.match(r'^[A-Za-z]:', rel):
+        return f'path {rel!r} must be relative'
+    if '..' in re.split(r'[/\\]', rel):
+        return f"path {rel!r} must not contain '..'"
+    if base is not None or '*' not in rel:
+        full = os.path.join(base or root, rel)
+        if not _inside(root, os.path.realpath(full)):
+            return f'path {rel!r} resolves outside the catalog root'
+    return None
+
+
+def _real_file(path):
+    return os.path.isfile(path) and not os.path.islink(path)
+
+
+def _inside(root, path):
+    root = os.path.realpath(root)
+    return path == root or path.startswith(root.rstrip(os.sep) + os.sep)
+
+
 def check_dockerfile(path):
     """Violations of R-4 that can be seen without building."""
     problems = []
@@ -47,7 +78,7 @@ def check_dockerfile(path):
         lines = f.read().splitlines()
     stages = set()
     for line in lines:
-        m = re.match(r'\s*FROM\s+(?:--\S+\s+)?(\S+)(?:\s+AS\s+(\S+))?', line, re.I)
+        m = re.match(r'[ \t]*FROM[ \t]+(?:--\S+[ \t]+)?(\S+)(?:[ \t]+AS[ \t]+(\S+))?', line, re.I)
         if not m:
             continue
         image, stage = m.groups()
@@ -59,7 +90,7 @@ def check_dockerfile(path):
         if ':' not in name or name.split(':', 1)[1] in ('latest', ''):
             problems.append(f'base image {image!r} is not pinned to an exact tag')
     text = '\n'.join(lines)
-    if re.search(r'https?://', text) and not re.search(r'^\s*ARG\s+\w+_VERSION=', text, re.M):
+    if re.search(r'https?://', text) and not re.search(r'^[ \t]*ARG[ \t]+\w+_VERSION=', text, re.M):
         problems.append('downloads a file but declares no ARG <NAME>_VERSION=')
     return problems
 
@@ -80,6 +111,10 @@ def check_index_entries(doc, key):
     entries = doc.get(key)
     if not isinstance(entries, list):
         return problems + [f'{key}: must be a list of entries']
+    ids = [e['id'] for e in entries if isinstance(e, dict) and isinstance(e.get('id'), str)]
+    counts = collections.Counter(ids)
+    for dup in sorted(i for i, n in counts.items() if n > 1):
+        problems.append(f'{key}: duplicate id {dup!r} ({counts[dup]} entries)')
     for n, e in enumerate(entries):
         if not isinstance(e, dict):
             problems.append(f'{key}[{n}]: must be an object')
@@ -122,10 +157,28 @@ def check(root, skip_index=False):
         return out
 
     runner = manifest.get('runner')
+    unsafe = False
+    for label, rel, base in (
+            ('implementations', manifest['implementations'], None),
+            ('runner.file', (runner or {}).get('file'), root),
+            ('runner.canonical', (runner or {}).get('canonical'), None),
+            ('metadata.file', manifest['metadata']['file'], root),
+            ('index.file', manifest['index']['file'], None)):
+        if not isinstance(rel, str):
+            continue
+        problem = _path_problem(root, rel, base)
+        if problem:
+            bad(manifest_path, 'manifest', f'{label}: {problem}')
+            unsafe = True
+    if unsafe:
+        return out
+
     canonical = None
     if runner:
         canonical_path = os.path.join(root, runner['canonical'])
-        if os.path.isfile(canonical_path):
+        if os.path.isfile(canonical_path) and not _inside(root, os.path.realpath(canonical_path)):
+            bad(canonical_path, 'runner', 'canonical runner resolves outside the catalog root')
+        elif os.path.isfile(canonical_path):
             with open(canonical_path, 'rb') as f:
                 canonical = f.read()
         else:
@@ -165,6 +218,10 @@ def check(root, skip_index=False):
                     versions[k] = e['version']
     dirs = sorted(d for d in glob.glob(os.path.join(root, manifest['implementations']))
                   if os.path.isdir(d))
+    for d in list(dirs):
+        if os.path.islink(d) or not _inside(root, os.path.realpath(d)):
+            bad(d, 'files', 'implementation directory is a symlink or resolves outside the catalog root')
+            dirs.remove(d)
     if not dirs:
         bad(root, 'files', f'no implementation matches {manifest["implementations"]!r}')
     for d in dirs:
@@ -175,31 +232,38 @@ def check(root, skip_index=False):
         markers = [dockerfile, os.path.join(d, 'benchmark_config.json'), meta_path]
         if runner:
             markers.append(os.path.join(d, runner['file']))
-        if rel not in listed_paths and not any(os.path.isfile(m) for m in markers):
+        if rel not in listed_paths and not any(os.path.lexists(m) for m in markers):
             continue  # not an implementation (docs/, tests/, ...)
+        runner_copy = os.path.join(d, runner['file']) if runner else None
+        for base, subdirs, files in os.walk(d):
+            for name in sorted(subdirs + files):
+                link = os.path.join(base, name)
+                if os.path.islink(link):
+                    bad(link, 'runner' if link == runner_copy else 'files',
+                        'symlinks are not allowed in implementation directories')
         needed = [dockerfile, os.path.join(d, 'benchmark_config.json'), meta_path]
         if runner:
             needed.append(os.path.join(d, runner['file']))
         for path in needed:
-            if not os.path.isfile(path):
+            if not os.path.isfile(path) and not os.path.islink(path):
                 bad(path, 'files', 'missing')
         if runner and canonical is not None:
             copy = os.path.join(d, runner['file'])
-            if os.path.isfile(copy) and os.path.realpath(copy) != os.path.realpath(canonical_path):
+            if os.path.isfile(copy) and not os.path.islink(copy):
                 with open(copy, 'rb') as f:
                     if f.read() != canonical:
                         bad(copy, 'runner', f'differs from {runner["canonical"]}')
-        if os.path.isfile(dockerfile):
+        if _real_file(dockerfile):
             for msg in check_dockerfile(dockerfile):
                 bad(dockerfile, 'dockerfile', msg)
         cfg_path = os.path.join(d, 'benchmark_config.json')
-        if os.path.isfile(cfg_path):
+        if _real_file(cfg_path):
             try:
                 for e in validate(_load(cfg_path), config_schema):
                     bad(cfg_path, 'config', e)
             except ValueError as e:
                 bad(cfg_path, 'config', f'invalid JSON: {e}')
-        if os.path.isfile(meta_path):
+        if _real_file(meta_path):
             try:
                 meta = _load(meta_path)
             except ValueError as e:
