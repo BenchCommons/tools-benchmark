@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "1.0.0",
+  "generatedFrom": "fixture",
+  "generators": [
+    {"id": "hugo", "path": "Go/hugo", "version": "0.167.0", "benchmark": {"status": "active"}},
+    {"id": "pelican", "path": "Python/pelican", "version": "4.11.0", "benchmark": {"status": "wip"}}
+  ]
+}

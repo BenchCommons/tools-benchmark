@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/BenchCommons/tools-benchmark/master/schema/catalog.schema.json",
+  "title": "catalog.json (catalog contract, spec 010 R-1)",
+  "type": "object",
+  "required": ["contractVersion", "name", "testTypes", "implementations", "metadata", "index"],
+  "properties": {
+    "$schema": {"type": "string"},
+    "contractVersion": {"type": "integer", "minimum": 1},
+    "name": {"enum": ["ssg", "algorithms", "web-frameworks"]},
+    "testTypes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"enum": ["datarate", "algorithm", "http"]}
+    },
+    "implementations": {"type": "string", "minLength": 1},
+    "runner": {
+      "type": "object",
+      "required": ["file", "canonical"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "canonical": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["file", "schema"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "schema": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "index": {
+      "type": "object",
+      "required": ["file", "key", "check"],
+      "properties": {
+        "file": {"type": "string", "minLength": 1},
+        "key": {"type": "string", "minLength": 1},
+        "check": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

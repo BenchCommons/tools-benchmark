@@ -1,4 +1,7 @@
 import pathlib
+import re
+
+import pytest
 
 from toolset.utils.results import Results, classify_build_output, parse_build_output
 
@@ -338,3 +341,88 @@ def test_unknown_conformance_marker_still_protocol_failure():
     text = _no_conf().replace("STARTTIME", "SSGBERK_CONFORMANCE_BOGUS\nSTARTTIME", 1)
     assert classify_build_output(text) == (
         "failed", "protocol: verification markers missing before STARTTIME")
+
+
+# --- spec 010 R-15, R-16: generic BENCH_ markers with SSGBERK_ aliases ---
+
+_ALIAS_FIXTURES = ["raw_ok.txt", "raw_v2_ok.txt"]
+
+
+def _generic(text):
+    return re.sub(r"^(\s*)SSGBERK_", r"\1BENCH_", text, flags=re.M)
+
+
+@pytest.mark.parametrize("name", _ALIAS_FIXTURES)
+def test_bench_prefix_parses_like_ssgberk(name):
+    raw = (FIX / name).read_text()
+    [old] = parse_build_output(raw, "10", "0.500", "1")
+    [new] = parse_build_output(_generic(raw), "10", "0.500", "1")
+    assert old.pop("markerPrefix") == "SSGBERK"
+    assert new.pop("markerPrefix") == "BENCH"
+    assert old == new
+    assert old["engine"] == "hyperfine" and old["engineVersion"] is None
+
+
+def test_bench_prefix_verdicts_match_ssgberk():
+    for name in ("raw_conformance_fail.txt", "raw_unsupported.txt"):
+        raw = (FIX / name).read_text()
+        got = classify_build_output(raw)
+        want = classify_build_output(_generic(raw).replace(
+            "BENCH_PROFILE_UNSUPPORTED", "BENCH_UNSUPPORTED"))
+        assert got[0] == want[0]
+
+
+def test_bench_unsupported_marker():
+    assert classify_build_output("BENCH_UNSUPPORTED no such algorithm\n") == ("unsupported", None)
+
+
+def test_result_header_names_the_engine():
+    raw = (FIX / "raw_ok.txt").read_text().replace(
+        "SSGBERK_RESULT_BEGIN\n", "BENCH_RESULT_BEGIN engine=perfratio version=1.3.0\n")
+    [r] = parse_build_output(_generic(raw), "10", "0.500", "1")
+    assert (r["engine"], r["engineVersion"]) == ("perfratio", "1.3.0")
+
+
+def test_alias_inside_json_untouched():
+    raw = (FIX / "raw_ok.txt").read_text().replace(
+        '"command":"hugo"', '"command":"SSGBERK_GENERATE_ONLY=1 hugo"')
+    [r] = parse_build_output(raw, "10", "0.500", "1")
+    assert r["status"] == "ok" and r["markerPrefix"] == "SSGBERK"
+
+
+# --- BT #48: anchored markers, SSGBERK_UNSUPPORTED alias, same-line JSON ---
+
+def test_ssgberk_unsupported_is_an_alias_of_bench_unsupported():
+    for marker in ("BENCH_UNSUPPORTED", "SSGBERK_UNSUPPORTED", "SSGBERK_PROFILE_UNSUPPORTED"):
+        assert classify_build_output(f"{marker} no such profile\n") == ("unsupported", None)
+
+
+def test_mid_line_marker_mention_is_not_a_marker():
+    text = "note: ignoring BENCH_RESULT_BEGIN in this log line\nSSGBERK_UNSUPPORTED x\n"
+    assert classify_build_output(text) == ("unsupported", None)
+    ok = _v2().replace("SSGBERK_RESULT_BEGIN", "SSGBERK_RESULT_BEGIN", 1)
+    mid = ok.replace("SSGBERK_RESULT_BEGIN", "see SSGBERK_RESULT_BEGIN", 1)
+    assert parse_build_output(mid, "1000", "0.500", "3") == []
+
+
+def test_mid_line_result_end_is_not_the_end_marker():
+    raw = _v2()
+    broken = raw.replace("\nSSGBERK_RESULT_END", " SSGBERK_RESULT_END", 1)
+    assert parse_build_output(broken, "1000", "0.500", "3") == []
+
+
+def test_json_on_the_result_begin_line_still_parses():
+    raw = _v2()
+    lines = raw.splitlines()
+    i = next(n for n, l in enumerate(lines) if l.startswith("SSGBERK_RESULT_BEGIN"))
+    j = next(n for n, l in enumerate(lines) if l.startswith("SSGBERK_RESULT_END"))
+    same_line = lines[:i] + ["SSGBERK_RESULT_BEGIN " + " ".join(l.strip() for l in lines[i + 1:j])] + lines[j:]
+    [new] = parse_build_output("\n".join(same_line) + "\n", "1000", "0.500", "3")
+    [old] = parse_build_output(raw, "1000", "0.500", "3")
+    assert new == old and new["engine"] == "hyperfine"
+
+
+def test_engine_header_still_read_when_json_is_on_following_lines():
+    raw = _v2().replace("SSGBERK_RESULT_BEGIN", "BENCH_RESULT_BEGIN engine=perfratio version=1.2", 1)
+    [r] = parse_build_output(raw.replace("SSGBERK_RESULT_END", "BENCH_RESULT_END"), "1000", "0.500", "3")
+    assert (r["engine"], r["engineVersion"]) == ("perfratio", "1.2")

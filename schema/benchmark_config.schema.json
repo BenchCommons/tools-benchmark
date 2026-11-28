@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/BenchCommons/tools-benchmark/master/schema/benchmark_config.schema.json",
+  "title": "benchmark_config.json (catalog contract, spec 010 R-8)",
+  "type": "object",
+  "required": ["framework", "tests"],
+  "properties": {
+    "framework": {"type": "string", "minLength": 1},
+    "tests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["default"],
+        "additionalProperties": {"$ref": "#/$defs/test"}
+      }
+    }
+  },
+  "$defs": {
+    "test": {
+      "type": "object",
+      "properties": {
+        "test_type": {"enum": ["datarate", "algorithm", "http"]},
+        "approach": {"type": "string"},
+        "classification": {"type": "string"},
+        "framework": {"type": "string"},
+        "language": {"type": "string"},
+        "display_name": {"type": "string"},
+        "notes": {"type": "string"},
+        "versus": {"type": "string"}
+      },
+      "allOf": [
+        {
+          "if": {"required": ["test_type"], "properties": {"test_type": {"const": "algorithm"}}},
+          "then": {
+            "required": ["algorithm", "run_command"],
+            "properties": {
+              "algorithm": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+              "build_command": {"type": "string"},
+              "run_command": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        {
+          "if": {"required": ["test_type"], "properties": {"test_type": {"const": "http"}}},
+          "then": {
+            "required": ["port"],
+            "properties": {"port": {"type": "integer", "minimum": 1}}
+          }
+        }
+      ]
+    }
+  }
+}

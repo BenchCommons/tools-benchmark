@@ -1,0 +1,459 @@
+import json
+import pathlib
+import shutil
+import subprocess
+import sys
+
+import pytest
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "tools"))
+
+import check_catalog  # noqa: E402
+
+FIXTURE = ROOT / "tests" / "fixtures" / "catalogs" / "algorithms"
+IMPL = "languages/python/n-body"
+
+
+@pytest.fixture
+def catalog(tmp_path):
+    dest = tmp_path / "catalog"
+    shutil.copytree(FIXTURE, dest)
+    return dest
+
+
+def _rules(root):
+    return [line.split(": ")[1] for line in check_catalog.check(str(root))]
+
+
+def _edit(path, fn):
+    data = json.loads(path.read_text())
+    fn(data)
+    path.write_text(json.dumps(data))
+
+
+def test_fixture_conforms():
+    assert check_catalog.check(str(FIXTURE)) == []
+
+
+def test_cli_exit_codes(catalog):
+    cmd = [sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(catalog)]
+    assert subprocess.run(cmd, capture_output=True).returncode == 0
+    (catalog / "catalog.json").unlink()
+    run = subprocess.run(cmd, capture_output=True, text=True)
+    assert run.returncode == 1 and "manifest" in run.stdout
+
+
+def test_manifest_missing(catalog):
+    (catalog / "catalog.json").unlink()
+    assert _rules(catalog) == ["manifest"]
+
+
+def test_manifest_invalid_field(catalog):
+    _edit(catalog / "catalog.json", lambda d: d.update(contractVersion="1"))
+    [line] = check_catalog.check(str(catalog))
+    assert "/contractVersion" in line and "manifest" in line
+
+
+def test_manifest_unsupported_version_names_both(catalog):
+    _edit(catalog / "catalog.json", lambda d: d.update(contractVersion=2))
+    [line] = check_catalog.check(str(catalog))
+    assert "2" in line and "[1, 1]" in line
+
+
+def test_files_missing_dockerfile(catalog):
+    (catalog / IMPL / "python.n-body.dockerfile").unlink()
+    assert _rules(catalog) == ["files"]
+
+
+def test_runner_differs_by_one_byte(catalog):
+    with open(catalog / IMPL / "run.sh", "ab") as f:
+        f.write(b"\n")
+    assert _rules(catalog) == ["runner"]
+
+
+@pytest.mark.parametrize("old,new", [
+    ("python:3.12.11-slim-bookworm", "python"),
+    ("python:3.12.11-slim-bookworm", "python:latest"),
+])
+def test_dockerfile_unpinned_base(catalog, old, new):
+    path = catalog / IMPL / "python.n-body.dockerfile"
+    path.write_text(path.read_text().replace(old, new, 1))
+    assert _rules(catalog) == ["dockerfile"]
+
+
+def test_dockerfile_download_without_version_arg(catalog):
+    path = catalog / IMPL / "python.n-body.dockerfile"
+    text = "\n".join(line for line in path.read_text().splitlines()
+                     if not line.startswith("ARG HYPERFINE_VERSION"))
+    path.write_text(text + "\n")
+    assert _rules(catalog) == ["dockerfile"]
+
+
+def test_config_algorithm_without_run_command(catalog):
+    def drop(d):
+        del d["tests"][0]["default"]["run_command"]
+    _edit(catalog / IMPL / "benchmark_config.json", drop)
+    [line] = check_catalog.check(str(catalog))
+    assert "config" in line and "run_command" in line
+
+
+def test_metadata_id_must_match_directories(catalog):
+    _edit(catalog / IMPL / "meta.json", lambda d: d.update(id="python.merge-sort"))
+    assert "ids" in _rules(catalog)
+
+
+def test_metadata_invalid_status(catalog):
+    _edit(catalog / IMPL / "meta.json", lambda d: d["benchmark"].update(status="done"))
+    assert _rules(catalog) == ["metadata"]
+
+
+def test_duplicate_id(catalog):
+    shutil.copytree(catalog / IMPL, catalog / "languages" / "python" / "n-body-copy")
+    assert "ids" in _rules(catalog)
+
+
+def test_index_check_fails(catalog):
+    _edit(catalog / "catalog.json",
+          lambda d: d["index"].update(check="python3 -c 'import sys; sys.exit(1)'"))
+    assert _rules(catalog) == ["index"]
+
+
+def test_index_lists_missing_implementation(catalog):
+    _edit(catalog / "implementations.json", lambda d: d["implementations"].pop())
+    assert "index" in _rules(catalog)
+
+
+SSG = ROOT / "tests" / "fixtures" / "catalogs" / "ssg-mini"
+
+
+@pytest.fixture
+def ssg(tmp_path):
+    dest = tmp_path / "ssg"
+    shutil.copytree(SSG, dest)
+    return dest
+
+
+def test_ssg_fixture_conforms():
+    """Version only in the index, and docs/ and tests/ matched by '*/*'."""
+    assert check_catalog.check(str(SSG)) == []
+
+
+def test_ssg_version_in_metadata_only(ssg):
+    _edit(ssg / "Go/hugo/generator.json", lambda d: d.update(version="0.167.0"))
+    _edit(ssg / "generators.json", lambda d: d["generators"][0].pop("version"))
+    assert check_catalog.check(str(ssg)) == []  # R-10: either source is enough
+
+
+def test_ssg_version_in_neither_source_but_malformed_index_version(ssg):
+    _edit(ssg / "generators.json", lambda d: d["generators"][0].update(version=3))
+    assert any(": index: " in x and "version must be a non-empty string" in x
+               for x in check_catalog.check(str(ssg)))
+
+
+def test_ssg_version_absent_everywhere(ssg):
+    _edit(ssg / "generators.json", lambda d: d["generators"][0].pop("version"))
+    lines = check_catalog.check(str(ssg))
+    assert any(line.startswith("Go/hugo/generator.json: metadata: version") for line in lines)
+
+
+@pytest.mark.parametrize("mutate,text", [
+    (lambda e: e.update(version=""), "version"),
+    (lambda e: e.pop("id"), "id"),
+    (lambda e: e.update(path=5), "path"),
+    (lambda e: e.update(benchmark={"status": "done"}), "benchmark.status"),
+    (lambda e: e.pop("benchmark"), "benchmark.status"),
+])
+def test_ssg_bad_index_entry(ssg, mutate, text):
+    _edit(ssg / "generators.json", lambda d: mutate(d["generators"][1]))
+    lines = [x for x in check_catalog.check(str(ssg)) if ": index: " in x]
+    assert lines and any(text in line for line in lines)
+
+
+@pytest.mark.parametrize("field", ["schemaVersion", "generatedFrom"])
+def test_ssg_index_top_level_fields(ssg, field):
+    _edit(ssg / "generators.json", lambda d: d.pop(field))
+    [line] = check_catalog.check(str(ssg))
+    assert ": index: " in line and field in line
+
+
+def test_ssg_stray_dir_ignored_but_listed_dir_reports_missing(ssg):
+    assert (ssg / "docs/specs").is_dir() and (ssg / "tests/reference").is_dir()
+    assert check_catalog.check(str(ssg)) == []
+    (ssg / "Python/pelican/pelican.dockerfile").unlink()
+    (ssg / "Python/pelican/benchmark_config.json").unlink()
+    (ssg / "Python/pelican/generator.json").unlink()
+    (ssg / "Python/pelican/build.sh").unlink()
+    lines = [x for x in check_catalog.check(str(ssg)) if ": files: " in x]
+    assert len(lines) == 4 and all(x.startswith("Python/pelican/") and x.endswith(": missing") for x in lines)
+
+
+# --- structurally malformed JSON: deterministic diagnostics, never a traceback ---
+
+def _set_file(path, text):
+    path.write_text(text)
+
+
+@pytest.mark.parametrize("value", ['["hugo"]', '{"x": 1}', '7', 'null'])
+def test_metadata_id_not_a_string(ssg, value):
+    meta = ssg / "Go/hugo/generator.json"
+    data = json.loads(meta.read_text())
+    meta.write_text(json.dumps(data).replace('"id": "hugo"', f'"id": {value}'))
+    lines = check_catalog.check(str(ssg))
+    assert any(": ids: id must be a string" in line for line in lines)
+    assert lines == check_catalog.check(str(ssg))
+
+
+@pytest.mark.parametrize("text", ['["not", "an", "object"]', '"s"', '3', 'null'])
+def test_metadata_not_an_object(ssg, text):
+    _set_file(ssg / "Go/hugo/generator.json", text)
+    lines = check_catalog.check(str(ssg))
+    assert any(": metadata: /: expected object" in line for line in lines)
+    assert lines == check_catalog.check(str(ssg))
+
+
+@pytest.mark.parametrize("text", ['["x"]', '"s"', '3', 'null'])
+def test_index_not_an_object(ssg, text):
+    _set_file(ssg / "generators.json", text)
+    lines = check_catalog.check(str(ssg))
+    assert any(": index: document must be a JSON object" in line for line in lines)
+    assert lines == check_catalog.check(str(ssg))
+
+
+@pytest.mark.parametrize("entry", ['["hugo"]', '"hugo"', '{"id": ["hugo"], "path": ["Go/hugo"], "version": 1}'])
+def test_index_entry_malformed(ssg, entry):
+    _edit(ssg / "generators.json", lambda d: d["generators"].append(json.loads(entry)))
+    lines = check_catalog.check(str(ssg))
+    assert any(": index: " in line for line in lines)
+    assert lines == check_catalog.check(str(ssg))
+
+
+def test_index_key_not_a_list(ssg):
+    _edit(ssg / "generators.json", lambda d: d.update(generators={"hugo": 1}))
+    lines = check_catalog.check(str(ssg))
+    assert any("generators: must be a list of entries" in line for line in lines)
+
+
+def test_malformed_input_cli_has_no_traceback(ssg):
+    _set_file(ssg / "generators.json", '["x"]')
+    _set_file(ssg / "Go/hugo/generator.json", '["x"]')
+    run = subprocess.run([sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(ssg)],
+                         capture_output=True, text=True)
+    assert run.returncode == 1 and "Traceback" not in run.stderr
+
+
+# --- untrusted input: path confinement, symlinks, regex cost, duplicate ids ---
+
+def _lines(root, rule):
+    return [x for x in check_catalog.check(str(root), skip_index=True) if f": {rule}: " in x]
+
+
+@pytest.mark.parametrize("edit", [
+    lambda d: d.update(implementations="/etc/*"),
+    lambda d: d["runner"].update(file="/etc/passwd"),
+    lambda d: d["runner"].update(canonical="/etc/passwd"),
+    lambda d: d["metadata"].update(file="/etc/passwd"),
+    lambda d: d["index"].update(file="/etc/passwd"),
+])
+def test_manifest_absolute_path_rejected(catalog, edit):
+    _edit(catalog / "catalog.json", edit)
+    lines = _lines(catalog, "manifest")
+    assert len(lines) == 1 and "must be relative" in lines[0]
+    assert check_catalog.check(str(catalog), skip_index=True) == lines
+
+
+@pytest.mark.parametrize("edit", [
+    lambda d: d.update(implementations="../*/*"),
+    lambda d: d["runner"].update(file="../run.sh"),
+    lambda d: d["runner"].update(canonical="../x/run.sh"),
+    lambda d: d["metadata"].update(file="a/../../meta.json"),
+    lambda d: d["index"].update(file="../implementations.json"),
+])
+def test_manifest_dotdot_rejected(catalog, edit):
+    _edit(catalog / "catalog.json", edit)
+    lines = _lines(catalog, "manifest")
+    assert len(lines) == 1 and "'..'" in lines[0]
+    assert check_catalog.check(str(catalog), skip_index=True) == lines
+
+
+def test_manifest_path_resolving_outside_root(catalog, tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "implementations.json").write_text("{}")
+    (catalog / "link").symlink_to(outside)
+    _edit(catalog / "catalog.json", lambda d: d["index"].update(file="link/implementations.json"))
+    lines = _lines(catalog, "manifest")
+    assert len(lines) == 1 and "outside the catalog root" in lines[0]
+
+
+def test_canonical_symlink_outside_root(catalog, tmp_path):
+    outside = tmp_path / "run.sh"
+    outside.write_bytes((catalog / IMPL / "run.sh").read_bytes())
+    canonical = catalog / "tools" / "run.sh"
+    canonical.parent.mkdir(exist_ok=True)
+    _edit(catalog / "catalog.json", lambda d: d["runner"].update(canonical="tools/run.sh"))
+    canonical.unlink()
+    canonical.symlink_to(outside)
+    lines = _lines(catalog, "manifest")
+    assert len(lines) == 1 and "runner.canonical" in lines[0] and "outside" in lines[0]
+
+
+def test_symlinked_runner_is_a_violation(catalog):
+    run = catalog / IMPL / "run.sh"
+    canonical = json.loads((catalog / "catalog.json").read_text())["runner"]["canonical"]
+    run.unlink()
+    run.symlink_to(catalog / canonical)
+    lines = _lines(catalog, "runner")
+    assert len(lines) == 1 and "symlink" in lines[0]
+
+
+def test_symlink_in_implementation_dir(catalog):
+    (catalog / IMPL / "extra").symlink_to(catalog / "catalog.json")
+    lines = _lines(catalog, "files")
+    assert len(lines) == 1 and "symlink" in lines[0]
+
+
+def test_dockerfile_blank_lines_are_not_quadratic(tmp_path):
+    import time
+    path = tmp_path / "x.dockerfile"
+    path.write_text("FROM python:3.12\nRUN curl https://example.com/x\n" + "\n" * 50000 + "ARG\n")
+    start = time.perf_counter()
+    problems = check_catalog.check_dockerfile(str(path))
+    assert time.perf_counter() - start < 1
+    assert any("_VERSION" in p for p in problems)
+
+
+def test_duplicate_index_ids_reported(ssg):
+    _edit(ssg / "generators.json", lambda d: d["generators"].append(dict(d["generators"][0])))
+    lines = [x for x in check_catalog.check(str(ssg), skip_index=True) if ": index: " in x]
+    assert any("duplicate id" in x for x in lines)
+
+
+@pytest.mark.parametrize("edit", [
+    lambda d: d.update(implementations="languages/*/n\u0000body"),
+    lambda d: d["runner"].update(file="run\u0000.sh"),
+    lambda d: d["runner"].update(canonical="tools/run\u0000.sh"),
+    lambda d: d["metadata"].update(file="meta\u0000.json"),
+    lambda d: d["index"].update(file="impl\u0000.json"),
+])
+def test_manifest_nul_rejected_without_traceback(catalog, edit):
+    _edit(catalog / "catalog.json", edit)
+    lines = _lines(catalog, "manifest")
+    assert len(lines) == 1 and "NUL" in lines[0]
+    run = subprocess.run([sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(catalog)],
+                         capture_output=True, text=True)
+    assert run.returncode == 1 and "Traceback" not in run.stderr
+
+
+def test_duplicate_detection_is_linear_and_exact():
+    import time
+    entries = [{"id": f"i{n}", "path": f"p{n}", "version": "1",
+                "benchmark": {"status": "active"}} for n in range(50000)]
+    doc = {"schemaVersion": 1, "generatedFrom": "x", "k": entries}
+    start = time.perf_counter()
+    assert check_check_clean(doc)
+    assert time.perf_counter() - start < 2
+    entries += [dict(entries[0]), dict(entries[0]), dict(entries[1])]
+    msgs = [m for m in check_catalog.check_index_entries(doc, "k") if "duplicate" in m]
+    assert msgs == ["k: duplicate id 'i0' (3 entries)", "k: duplicate id 'i1' (2 entries)"]
+
+
+def check_check_clean(doc):
+    return check_catalog.check_index_entries(doc, "k") == []
+
+
+# --- #42 catalog metadata schema, #44 invalid UTF-8, #45 layout, #43 optional index version ---
+
+def _schema_path(root):
+    return root / json.loads((root / "catalog.json").read_text())["metadata"]["schema"]
+
+
+BASE_REF = ("https://raw.githubusercontent.com/BenchCommons/tools-benchmark/master/"
+            "schema/implementation.base.schema.json")
+
+
+def test_catalog_schema_valid_extra_field(ssg):
+    _edit(ssg / "Go/hugo/generator.json", lambda d: d.update(templateEngines=["go-template"]))
+    assert check_catalog.check(str(ssg)) == []
+
+
+def test_catalog_schema_violation_reported_once_with_path(ssg):
+    _edit(ssg / "Go/hugo/generator.json", lambda d: d.update(templateEngines="go-template"))
+    lines = check_catalog.check(str(ssg))
+    assert lines == ["Go/hugo/generator.json: metadata: /templateEngines: expected array"]
+
+
+def test_catalog_schema_base_violation_not_duplicated(ssg):
+    _edit(ssg / "Go/hugo/generator.json", lambda d: d.update(benchmark={"status": "done"}))
+    lines = [x for x in check_catalog.check(str(ssg)) if "benchmark/status" in x]
+    assert len(lines) == 1
+
+
+def test_catalog_schema_missing(ssg):
+    _schema_path(ssg).unlink()
+    lines = check_catalog.check(str(ssg))
+    assert lines == ["schema/generator.schema.json: metadata: catalog metadata schema not found"]
+
+
+def test_catalog_schema_invalid_json(ssg):
+    _schema_path(ssg).write_text("{")
+    lines = check_catalog.check(str(ssg))
+    assert len(lines) == 1 and lines[0].startswith("schema/generator.schema.json: metadata: invalid JSON")
+
+
+@pytest.mark.parametrize("text", ["[]", "5"])
+def test_catalog_schema_not_an_object(ssg, text):
+    _schema_path(ssg).write_text(text)
+    assert check_catalog.check(str(ssg)) == [
+        "schema/generator.schema.json: metadata: schema must be a JSON object"]
+
+
+def test_catalog_schema_unresolved_ref_is_a_diagnostic(ssg):
+    _schema_path(ssg).write_text(json.dumps({"allOf": [{"$ref": "https://example.com/x.json"}]}))
+    run = subprocess.run([sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(ssg)],
+                         capture_output=True, text=True)
+    assert run.returncode == 1 and "Traceback" not in run.stderr
+    assert run.stdout.count("schema cannot be applied") == 1
+
+
+def test_catalog_schema_path_confined(ssg):
+    _edit(ssg / "catalog.json", lambda d: d["metadata"].update(schema="../schema.json"))
+    lines = check_catalog.check(str(ssg))
+    assert len(lines) == 1 and "metadata.schema" in lines[0] and "'..'" in lines[0]
+
+
+def test_catalog_schema_refs_base_by_file_name(ssg):
+    _schema_path(ssg).write_text(json.dumps(
+        {"allOf": [{"$ref": "implementation.base.schema.json"}]}))
+    assert check_catalog.check(str(ssg)) == []
+    _edit(ssg / "Go/hugo/generator.json", lambda d: d.pop("name"))
+    assert any("name" in x for x in check_catalog.check(str(ssg)))
+
+
+def test_invalid_utf8_dockerfile_one_line_diagnostic(catalog):
+    dockerfile = catalog / IMPL / "python.n-body.dockerfile"
+    dockerfile.write_bytes(b"FROM python:3.12\n# \xff\xfe\n")
+    lines = check_catalog.check(str(catalog), skip_index=True)
+    assert len(lines) == 1
+    assert lines[0].startswith(f"{IMPL}/python.n-body.dockerfile: dockerfile: not valid UTF-8")
+    run = subprocess.run([sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(catalog),
+                          "--skip-index-check"], capture_output=True, text=True)
+    assert run.returncode == 1 and "Traceback" not in run.stderr
+    assert run.stdout.count("\n") == 1
+
+
+@pytest.mark.parametrize("pattern", ["*", "languages"])
+def test_algorithm_glob_matching_misshapen_paths_is_one_line(catalog, pattern):
+    _edit(catalog / "catalog.json", lambda d: d.update(implementations=pattern))
+    run = subprocess.run([sys.executable, str(ROOT / "tools" / "check_catalog.py"), str(catalog),
+                          "--skip-index-check"], capture_output=True, text=True)
+    assert run.returncode == 1 and "Traceback" not in run.stderr
+    lines = [x for x in run.stdout.splitlines() if ": manifest: " in x]
+    assert len(lines) == 1 and "not <language>/<algorithm>" in lines[0]
+    assert lines[0].startswith("catalog.json: manifest: implementations")
+
+
+def test_index_entry_without_version_is_accepted_by_the_entry_check():
+    doc = {"schemaVersion": 1, "generatedFrom": "x",
+           "k": [{"id": "a", "path": "p", "benchmark": {"status": "active"}}]}
+    assert check_catalog.check_index_entries(doc, "k") == []

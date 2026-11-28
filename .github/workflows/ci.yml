@@ -17,7 +17,8 @@ jobs:
           python-version: "3.12"
       - run: pip install -r requirements-dev.txt
       - run: python -m compileall -q toolset
-      - run: ruff check toolset tests
+      - run: ruff check toolset tests tools
+      - run: python tools/check_catalog.py tests/fixtures/catalogs/algorithms
       - run: pytest -q
       - run: docker build -t ssgberk/toolset - < Dockerfile
 
@@ -32,6 +33,19 @@ jobs:
       - run: |
           R=$(ls -td results/*/ | head -1)
           jq -e '.rawData.datarate.hugo[0].mean > 0' "$R/results.json"
+
+  catalog-algorithms-e2e:
+    needs: toolset
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-dev.txt
+      - name: Correct implementation is timed, wrong output fails without a number
+        run: BENCH_E2E_DOCKER=1 pytest -q tests/test_algorithm_type.py
 
   quality-image:
     needs: toolset

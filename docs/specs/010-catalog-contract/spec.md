@@ -1,7 +1,7 @@
 # 010 Catalog Contract
 
 - **Date:** 2026-10-12
-- **Status:** proposed, awaiting review
+- **Status:** in implementation. Delivered so far: schemas, checker, generic markers, the `algorithm` parser and an end-to-end fixture run (see `plan.md`, Status). Catalog selection, suites per catalog and the `results.json` `catalog` key are not done.
 - **Repo:** `BenchCommons/benchmark-tool` (BT). This repo owns the contract; catalogs reference it and never redefine it (`.product` `CONTRACTS.md`).
 - **Issue:** #29
 - **Consumers:** `BenchCommons/catalog-ssg` (CS), `BenchCommons/catalog-algorithms` (CA), `BenchCommons/catalog-web-frameworks` (CW).
@@ -60,7 +60,7 @@ TechEmpower solved the same problem for web frameworks: a per-implementation `be
   - every downloaded tool, toolchain and engine is installed at an exact version, set by an `ARG <NAME>_VERSION=` line (CS `hugo.dockerfile`: `HYPERFINE_VERSION`, `HUGO_VERSION`);
   - package-manager installs use a lockfile or exact versions;
   - the engine (hyperfine 1.20.0 today; perfratio after BT #30) is installed in the image, so timing happens inside the container and never wraps `docker run`;
-  - the image works on `linux/amd64` and `linux/arm64`, or the metadata says which one it supports (R-10 `platforms`).
+  - the image works on `linux/amd64` and `linux/arm64`, or the metadata says which one it supports (R-10 `platforms`). The fixture's Dockerfile pins hyperfine for both, but BT's `catalog-algorithms-e2e` job runs on `ubuntu-24.04` (amd64) only, so the arm64 path is not built in CI (BT #46); `plan.md` (Status) keeps the same statement.
 
 ### Runner
 
@@ -118,7 +118,7 @@ TechEmpower solved the same problem for web frameworks: a per-implementation `be
 - **R-17** BT runs one catalog per run, chosen by `--catalog <name>` (default `ssg`) from submodules under `catalogs/<name>/`, or by `--catalog-dir <path>` for a local checkout. `--test`, `--exclude`, `--list-tests` and the suite options work on the selected catalog.
 - **R-18** `toolset/benchmark/suites.json` entries gain `catalog` and `testType`, defaulting to `ssg` and `datarate`, and their cells hold the test type's parameters. Existing suites (`smoke`, `standard`, `stress`, `legacy-2019`, `P`, `M`, `G`, `GG`) are unchanged and keep their versions. `--suite` refuses a suite whose `catalog` differs from the selected one.
 - **R-19** `results.json` stays `schemaVersion: 2` with one additive key, `catalog: {"name", "commit", "contractVersion"}`, and per-result `markerPrefix` (R-16). `rawData`, `succeeded`, `failed` and `unsupported` are already keyed by test type, so `algorithm` and `http` results go under their own keys. Engine fields (energy, custom metrics) and `schemaVersion: 3` belong to BT #30.
-- **R-20** BT ships `tools/check_catalog.py <catalog-dir>` (stdlib only), which a catalog's CI runs against a pinned BT tag. It checks R-1 to R-11: manifest valid, every implementation has its files, runner copies are byte-identical, Dockerfiles have no unpinned base image or `latest`, every `benchmark_config.json` and metadata file validates, ids are unique and match the index, and `index.check` passes. It exits non-zero with one line per violation.
+- **R-20** BT ships `tools/check_catalog.py <catalog-dir>` (stdlib only), which a catalog's CI runs against a pinned BT tag. It checks R-1 to R-11: manifest valid, every implementation has its files, runner copies are byte-identical, Dockerfiles have no unpinned base image or `latest`, every `benchmark_config.json` and metadata file validates, ids are unique and match the index, and `index.check` passes. It exits non-zero with one line per violation. Catalog input is untrusted: manifest paths must be relative, free of `..` and resolve inside the root, symlinks inside implementation directories are violations, and duplicate ids in the index are reported. `index.check` runs through the shell, so it executes catalog code; run the checker only on catalogs you trust, or pass `--skip-index-check`.
 
 ## Goals and success criteria
 

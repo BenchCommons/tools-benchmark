@@ -1,0 +1,7 @@
+{
+  "id": "pelican",
+  "name": "Pelican",
+  "language": "Python",
+  "license": "MIT",
+  "benchmark": {"status": "active"}
+}

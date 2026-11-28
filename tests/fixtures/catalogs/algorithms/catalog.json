@@ -1,0 +1,9 @@
+{
+  "contractVersion": 1,
+  "name": "algorithms",
+  "testTypes": ["algorithm"],
+  "implementations": "languages/*/*",
+  "runner": {"file": "run.sh", "canonical": "tools/run.sh"},
+  "metadata": {"file": "meta.json", "schema": "schema/implementation.schema.json"},
+  "index": {"file": "implementations.json", "key": "implementations", "check": "python3 tools/check_index.py"}
+}
